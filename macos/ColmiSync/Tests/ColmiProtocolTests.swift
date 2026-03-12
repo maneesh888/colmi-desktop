@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import ColmiSync
 
 @Suite("Colmi Protocol Tests")
@@ -82,10 +83,10 @@ struct ColmiProtocolTests {
         #expect(packet[0] == ColmiCommand.readHeartRate.rawValue)
         #expect(ColmiPacket.isValid(packet))
         
-        // Check timestamp is embedded correctly (little-endian)
-        let embedded = packet[1..<5].withUnsafeBytes { $0.load(as: UInt32.self) }
-        // Should be start of day for the given date
-        #expect(embedded > 0)
+        // Check timestamp bytes are present (bytes 1-4)
+        // Verify some timestamp data was written
+        let hasTimestampData = packet[1] != 0 || packet[2] != 0 || packet[3] != 0 || packet[4] != 0
+        #expect(hasTimestampData)
     }
     
     @Test("Error packet detection")
