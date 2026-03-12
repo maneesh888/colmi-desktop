@@ -1,0 +1,184 @@
+# Colmi Ring BLE Protocol
+
+This document describes the Bluetooth Low Energy (BLE) protocol used by Colmi smart rings (R02, R06, R09, R10 and compatible).
+
+## Overview
+
+The ring uses a Nordic UART Service (NUS) variant for communication:
+- No pairing or security keys required
+- 16-byte packet structure
+- Simple checksum for validation
+
+## BLE UUIDs
+
+| Name | UUID |
+|------|------|
+| **UART Service** | `6E40FFF0-B5A3-F393-E0A9-E50E24DCCA9E` |
+| **RX Characteristic** (write) | `6E400002-B5A3-F393-E0A9-E50E24DCCA9E` |
+| **TX Characteristic** (notify) | `6E400003-B5A3-F393-E0A9-E50E24DCCA9E` |
+
+Additional standard services:
+| Name | UUID |
+|------|------|
+| Device Info Service | `0000180A-0000-1000-8000-00805F9B34FB` |
+| Hardware Revision | `00002A27-0000-1000-8000-00805F9B34FB` |
+| Firmware Revision | `00002A26-0000-1000-8000-00805F9B34FB` |
+
+## Packet Structure
+
+All packets are exactly 16 bytes:
+
+```
+Byte 0:      Command ID
+Bytes 1-14:  Payload (command-specific)
+Byte 15:     Checksum
+```
+
+### Checksum
+
+The checksum is calculated as: `sum(bytes[0..14]) & 0xFF`
+
+```swift
+func checksum(_ data: Data) -> UInt8 {
+    let sum = data.prefix(15).reduce(0) { $0 + UInt16($1) }
+    return UInt8(sum & 0xFF)
+}
+```
+
+### Error Bit
+
+Response packets may have bit 7 of the command byte set to indicate an error:
+- `0x03` = successful battery response
+- `0x83` = battery command error
+
+## Commands
+
+### 0x03 - Battery Level
+
+**Request:** `[0x03, 0x00...0x00, checksum]`
+
+**Response:**
+```
+Byte 0:  0x03 (command)
+Byte 1:  Battery level (0-100)
+Byte 2:  Charging status (0=no, 1=yes)
+Byte 15: Checksum
+```
+
+### 0x01 - Set Time
+
+**Request:**
+```
+Byte 0:  0x01 (command)
+Byte 1:  Year - 2000 (e.g., 24 for 2024)
+Byte 2:  Month (1-12)
+Byte 3:  Day (1-31)
+Byte 4:  Hour (0-23)
+Byte 5:  Minute (0-59)
+Byte 6:  Second (0-59)
+Byte 7:  Week day (0=auto)
+Byte 15: Checksum
+```
+
+### 0x15 (21) - Read Heart Rate Log
+
+Requests heart rate data for a specific day. Returns multiple packets.
+
+**Request:**
+```
+Byte 0:    0x15 (command)
+Bytes 1-4: Unix timestamp (little-endian, start of day)
+Byte 15:   Checksum
+```
+
+**Response (multi-packet):**
+
+Packet 0 (header):
+```
+Byte 0: 0x15
+Byte 1: 0x00 (sub-type)
+Byte 2: Number of data packets to follow
+Byte 3: Interval in minutes (usually 5)
+```
+
+Packet 1 (first data):
+```
+Byte 0:    0x15
+Byte 1:    0x01 (sub-type)
+Bytes 2-5: Timestamp (little-endian)
+Bytes 6-14: First 9 HR values
+```
+
+Packets 2+:
+```
+Byte 0:    0x15
+Byte 1:    N (sub-type, 2..N)
+Bytes 2-14: 13 HR values each
+```
+
+### 0x69 (105) - Real-Time Heart Rate
+
+**Start Request:**
+```
+Byte 0: 0x69
+Byte 1: 0x01 (start)
+Byte 2: 0x00 (HR type)
+```
+
+**Stop Request:**
+```
+Byte 0: 0x69
+Byte 1: 0x00 (stop)
+Byte 2: 0x00 (HR type)
+```
+
+**Response:**
+```
+Byte 0: 0x69
+Byte 1: 0x00 (success) or 0xFF (error)
+Byte 2: HR value (BPM)
+```
+
+### 0x6A (106) - Real-Time SpO2
+
+Same structure as real-time HR, but with command 0x6A and type 0x02.
+
+### 0x50 (80) - Find Device
+
+Makes the ring vibrate.
+
+**Request:** `[0x50, 0x00...0x00, checksum]`
+
+### Other Commands
+
+| Command | Name | Notes |
+|---------|------|-------|
+| 0x08 | Power Off | Turns off the ring |
+| 0x37 | Read Stress | Stress measurement data |
+| 0x43 | Read Activity | Steps, calories, distance |
+
+## Data Formats
+
+### Heart Rate Log
+
+The daily heart rate log contains 288 readings (one every 5 minutes for 24 hours).
+
+- Value 0 = no data for that time slot
+- Values 30-250 = valid BPM readings
+
+### Ring Names
+
+Compatible rings typically advertise as:
+- `R02_XXXX`
+- `R06_XXXX`
+- `R09_XXXX`
+- `R10_XXXX`
+
+Where XXXX is the last 4 characters of the MAC address.
+
+## References
+
+- [tahnok/colmi_r02_client](https://github.com/tahnok/colmi_r02_client) - Python client
+- [Gadgetbridge PR #3896](https://codeberg.org/Freeyourgadget/Gadgetbridge/pulls/3896) - Android support
+- [atc1441/ATC_RF03_Ring](https://github.com/atc1441/ATC_RF03_Ring) - Custom firmware
+- [tahnok's notes](https://notes.tahnok.ca/) - Reverse engineering notes
