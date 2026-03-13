@@ -30,6 +30,8 @@ class BLEManager: NSObject, ObservableObject {
     @Published var lastHeartRate: Int?
     @Published var lastSpO2: Int?
     @Published var lastSyncDate: Date?
+    @Published var todaySteps: Int?
+    @Published var todayCalories: Int?
     
     @Published var errorMessage: String?
     
@@ -44,11 +46,16 @@ class BLEManager: NSObject, ObservableObject {
     
     // Parsers
     private let hrLogParser = HeartRateLogParser()
+    private let activityParser = ActivityParser()
+    private let spo2LogParser = SpO2LogParser()
     
     // Continuations for async/await
     private var connectionContinuation: CheckedContinuation<Void, Error>?
     private var batteryContinuation: CheckedContinuation<BatteryInfo, Error>?
     private var realTimeContinuation: CheckedContinuation<Int, Error>?
+    private var hrLogContinuation: CheckedContinuation<HeartRateLog?, Error>?
+    private var activityContinuation: CheckedContinuation<DailyActivity?, Error>?
+    private var spo2LogContinuation: CheckedContinuation<SpO2Log?, Error>?
     
     // MARK: - Initialization
     
@@ -130,6 +137,25 @@ class BLEManager: NSObject, ObservableObject {
             if let hr = try await getRealTimeHeartRate() {
                 lastHeartRate = hr
                 logger.info("Heart rate: \(hr) BPM")
+                
+                // Save to store
+                try? await DataStore.shared.saveLatestReading(heartRate: hr, battery: batteryLevel)
+            }
+            
+            // Get today's steps/activity
+            if let activity = try await getActivity(dayOffset: 0) {
+                todaySteps = activity.totalSteps
+                todayCalories = activity.totalCalories
+                logger.info("Today: \(activity.totalSteps) steps, \(activity.totalCalories) cal")
+                
+                // Save to store
+                try? await DataStore.shared.saveActivity(activity)
+            }
+            
+            // Get today's HR log (historical readings)
+            if let hrLog = try await getHeartRateLog(for: Date()) {
+                logger.info("HR log: \(hrLog.validReadings.count) readings")
+                try? await DataStore.shared.saveHeartRateLog(hrLog)
             }
             
             lastSyncDate = Date()
@@ -138,6 +164,46 @@ class BLEManager: NSObject, ObservableObject {
             logger.error("Sync error: \(error.localizedDescription)")
             errorMessage = error.localizedDescription
         }
+    }
+    
+    /// Sync all data for a date range (for initial sync or catch-up)
+    func syncHistory(days: Int = 7) async {
+        guard isConnected else { return }
+        
+        isSyncing = true
+        defer { isSyncing = false }
+        
+        let calendar = Calendar.current
+        let today = Date()
+        
+        for dayOffset in 0..<days {
+            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
+            
+            do {
+                // HR log for this day
+                if let hrLog = try await getHeartRateLog(for: date) {
+                    logger.info("HR log \(date): \(hrLog.validReadings.count) readings")
+                    try? await DataStore.shared.saveHeartRateLog(hrLog)
+                }
+                
+                // Activity for this day
+                if let activity = try await getActivity(dayOffset: dayOffset) {
+                    logger.info("Activity \(date): \(activity.totalSteps) steps")
+                    try? await DataStore.shared.saveActivity(activity)
+                }
+                
+                // SpO2 log for this day
+                if let spo2Log = try await getSpO2Log(for: date) {
+                    logger.info("SpO2 log \(date): \(spo2Log.validReadings.count) readings")
+                    try? await DataStore.shared.saveSpO2Log(spo2Log)
+                }
+                
+            } catch {
+                logger.error("Error syncing \(date): \(error.localizedDescription)")
+            }
+        }
+        
+        lastSyncDate = Date()
     }
     
     func findRing() async {
@@ -195,6 +261,60 @@ class BLEManager: NSObject, ObservableObject {
         }
     }
     
+    private func getHeartRateLog(for date: Date) async throws -> HeartRateLog? {
+        hrLogParser.reset()
+        await sendPacket(HeartRateLogParser.requestPacket(for: date))
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            self.hrLogContinuation = continuation
+            
+            // Timeout after 10 seconds
+            Task {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+                if self.hrLogContinuation != nil {
+                    self.hrLogContinuation?.resume(returning: nil)
+                    self.hrLogContinuation = nil
+                }
+            }
+        }
+    }
+    
+    private func getActivity(dayOffset: Int) async throws -> DailyActivity? {
+        activityParser.reset()
+        await sendPacket(ActivityParser.requestPacket(dayOffset: dayOffset))
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            self.activityContinuation = continuation
+            
+            // Timeout after 10 seconds
+            Task {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+                if self.activityContinuation != nil {
+                    self.activityContinuation?.resume(returning: nil)
+                    self.activityContinuation = nil
+                }
+            }
+        }
+    }
+    
+    private func getSpO2Log(for date: Date) async throws -> SpO2Log? {
+        spo2LogParser.reset()
+        await sendPacket(SpO2LogParser.requestPacket(for: date))
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            self.spo2LogContinuation = continuation
+            
+            // Timeout after 10 seconds
+            Task {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+                if self.spo2LogContinuation != nil {
+                    self.spo2LogContinuation?.resume(returning: nil)
+                    self.spo2LogContinuation = nil
+                }
+            }
+        }
+    }
+    
     private func sendPacket(_ data: Data) async {
         guard let peripheral = peripheral,
               let characteristic = rxCharacteristic else {
@@ -245,7 +365,26 @@ class BLEManager: NSObject, ObservableObject {
         case .readHeartRate:
             if let log = hrLogParser.parse(data) {
                 logger.info("Received HR log for \(log.date): \(log.validReadings.count) readings")
-                // TODO: Store in database
+                hrLogContinuation?.resume(returning: log)
+                hrLogContinuation = nil
+            }
+            
+        case .readActivity:
+            if let activity = activityParser.parse(data) {
+                logger.info("Received activity: \(activity.totalSteps) steps")
+                Task { @MainActor in
+                    self.todaySteps = activity.totalSteps
+                    self.todayCalories = activity.totalCalories
+                }
+                activityContinuation?.resume(returning: activity)
+                activityContinuation = nil
+            }
+            
+        case .readSpO2Log:
+            if let log = spo2LogParser.parse(data) {
+                logger.info("Received SpO2 log: \(log.validReadings.count) readings")
+                spo2LogContinuation?.resume(returning: log)
+                spo2LogContinuation = nil
             }
             
         default:

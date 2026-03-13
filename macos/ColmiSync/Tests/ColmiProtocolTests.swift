@@ -100,4 +100,117 @@ struct ColmiProtocolTests {
         packet[0] = 0x03  // No error
         #expect(!ColmiPacket.hasError(packet))
     }
+    
+    @Test("Activity request packet")
+    func testActivityRequest() {
+        let packet = ActivityParser.requestPacket(dayOffset: 0)
+        
+        #expect(packet[0] == ColmiCommand.readActivity.rawValue)
+        #expect(packet[1] == 0x00)  // Day offset
+        #expect(packet[2] == 0x0F)  // Constant
+        #expect(ColmiPacket.isValid(packet))
+        
+        // Test with offset
+        let yesterday = ActivityParser.requestPacket(dayOffset: 1)
+        #expect(yesterday[1] == 0x01)
+    }
+    
+    @Test("Activity parser - no data")
+    func testActivityNoData() {
+        let parser = ActivityParser()
+        
+        // No data packet: byte 1 = 0xFF
+        var packet = Data(count: 16)
+        packet[0] = ColmiCommand.readActivity.rawValue
+        packet[1] = 0xFF  // No data
+        packet[15] = ColmiPacket.checksum(packet)
+        
+        let result = parser.parse(packet)
+        #expect(result != nil)
+        #expect(result?.details.isEmpty == true)
+    }
+    
+    @Test("Activity parser - header packet")
+    func testActivityHeader() {
+        let parser = ActivityParser()
+        
+        // Header packet: byte 1 = 0xF0
+        var packet = Data(count: 16)
+        packet[0] = ColmiCommand.readActivity.rawValue
+        packet[1] = 0xF0  // Header marker
+        packet[2] = 0x03  // 3 total packets
+        packet[3] = 0x01  // New calorie protocol
+        packet[15] = ColmiPacket.checksum(packet)
+        
+        // Header should return nil (waiting for more)
+        let result = parser.parse(packet)
+        #expect(result == nil)
+    }
+    
+    @Test("SpO2 log request packet")
+    func testSpO2LogRequest() {
+        let date = Date(timeIntervalSince1970: 1710288000)
+        let packet = SpO2LogParser.requestPacket(for: date)
+        
+        #expect(packet[0] == ColmiCommand.readSpO2Log.rawValue)
+        #expect(ColmiPacket.isValid(packet))
+    }
+    
+    @Test("SpO2 log parser - error response")
+    func testSpO2LogError() {
+        let parser = SpO2LogParser()
+        
+        var packet = Data(count: 16)
+        packet[0] = ColmiCommand.readSpO2Log.rawValue
+        packet[1] = 0xFF  // Error/no data
+        packet[15] = ColmiPacket.checksum(packet)
+        
+        let result = parser.parse(packet)
+        #expect(result == nil)
+    }
+    
+    @Test("SportDetail properties")
+    func testSportDetailTimeIndex() {
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.year = 2024
+        components.month = 3
+        components.day = 13
+        components.hour = 14
+        components.minute = 30
+        
+        guard let timestamp = calendar.date(from: components) else {
+            Issue.record("Failed to create date")
+            return
+        }
+        
+        let detail = SportDetail(
+            timestamp: timestamp,
+            steps: 500,
+            calories: 25,
+            distance: 350
+        )
+        
+        // 14:30 should be index 58 (14*4 + 30/15 = 56 + 2)
+        #expect(detail.timeIndex == 58)
+        #expect(detail.steps == 500)
+        #expect(detail.calories == 25)
+        #expect(detail.distance == 350)
+    }
+    
+    @Test("DailyActivity totals")
+    func testDailyActivityTotals() {
+        let now = Date()
+        let details = [
+            SportDetail(timestamp: now, steps: 100, calories: 10, distance: 50),
+            SportDetail(timestamp: now, steps: 200, calories: 20, distance: 100),
+            SportDetail(timestamp: now, steps: 300, calories: 30, distance: 150)
+        ]
+        
+        let activity = DailyActivity(date: now, details: details)
+        
+        #expect(activity.totalSteps == 600)
+        #expect(activity.totalCalories == 60)
+        #expect(activity.totalDistance == 300)
+    }
 }

@@ -60,6 +60,67 @@ actor DataStore {
         }
     }
     
+    // MARK: - Activity/Steps
+    
+    func saveActivity(_ activity: DailyActivity) throws {
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withFullDate]
+        
+        let filename = "activity-\(dateFormatter.string(from: activity.date)).json"
+        let url = baseURL.appendingPathComponent(filename)
+        
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        
+        let jsonData = try encoder.encode(activity)
+        try jsonData.write(to: url)
+        
+        logger.info("Saved activity to \(filename)")
+    }
+    
+    func loadActivity(for date: Date) throws -> DailyActivity? {
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withFullDate]
+        
+        let filename = "activity-\(dateFormatter.string(from: date)).json"
+        let url = baseURL.appendingPathComponent(filename)
+        
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        
+        let data = try Data(contentsOf: url)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        
+        return try decoder.decode(DailyActivity.self, from: data)
+    }
+    
+    // MARK: - SpO2 Logs
+    
+    func saveSpO2Log(_ log: SpO2Log) throws {
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withFullDate]
+        
+        let filename = "spo2-\(dateFormatter.string(from: log.date)).json"
+        let url = baseURL.appendingPathComponent(filename)
+        
+        let data = SpO2FileData(
+            date: log.date,
+            readings: log.readingsWithTimes.map { 
+                SpO2ReadingData(timestamp: $0.time, value: $0.spO2) 
+            }
+        )
+        
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        
+        let jsonData = try encoder.encode(data)
+        try jsonData.write(to: url)
+        
+        logger.info("Saved SpO2 log to \(filename)")
+    }
+    
     // MARK: - Latest Readings
     
     func saveLatestReading(heartRate: Int? = nil, spO2: Int? = nil, battery: Int? = nil) throws {
@@ -118,4 +179,16 @@ struct LatestReadings: Codable {
     var spO2Time: Date?
     var battery: Int?
     var batteryTime: Date?
+    var steps: Int?
+    var stepsTime: Date?
+}
+
+struct SpO2FileData: Codable {
+    let date: Date
+    let readings: [SpO2ReadingData]
+}
+
+struct SpO2ReadingData: Codable {
+    let timestamp: Date
+    let value: Int
 }
