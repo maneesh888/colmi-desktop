@@ -85,6 +85,14 @@ struct MenuBarView: View {
                 MetricRow(icon: "lungs.fill", label: "SpO2", value: "\(spo2)%", color: .blue)
             }
             
+            if let steps = bleManager.todaySteps {
+                MetricRow(icon: "figure.walk", label: "Steps", value: formatNumber(steps), color: .orange)
+            }
+            
+            if let calories = bleManager.todayCalories {
+                MetricRow(icon: "flame.fill", label: "Calories", value: "\(calories) cal", color: .pink)
+            }
+            
             if bleManager.isSyncing {
                 HStack {
                     ProgressView()
@@ -150,6 +158,12 @@ struct MenuBarView: View {
         case 50..<75: return "battery.75"
         default: return "battery.100"
         }
+    }
+    
+    private func formatNumber(_ n: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: n)) ?? "\(n)"
     }
 }
 

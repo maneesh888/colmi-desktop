@@ -149,13 +149,55 @@ Makes the ring vibrate.
 
 **Request:** `[0x50, 0x00...0x00, checksum]`
 
+### 0x43 (67) - Read Steps/Activity
+
+Requests activity data for a specific day (relative to today).
+
+**Request:**
+```
+Byte 0:  0x43 (command)
+Byte 1:  Day offset (0=today, 1=yesterday, etc.)
+Byte 2:  0x0F (constant)
+Byte 3:  0x00 
+Byte 4:  0x5F
+Byte 5:  0x01 (constant)
+Byte 15: Checksum
+```
+
+**Response (multi-packet):**
+
+Packet 0 (header):
+```
+Byte 0: 0x43
+Byte 1: 0xF0 (header marker)
+Byte 2: Total packet count
+Byte 3: Calorie protocol (0=old, 1=new multiplied by 10)
+```
+
+Data packets (BCD-encoded dates):
+```
+Byte 0:    0x43
+Byte 1:    Year (BCD, e.g., 0x24 = 2024)
+Byte 2:    Month (BCD)
+Byte 3:    Day (BCD)
+Byte 4:    Time index (0-95 for 15-min intervals)
+Byte 5:    Current packet index
+Byte 6:    Total data packets
+Bytes 7-8: Calories (little-endian, multiply by 10 if new protocol)
+Bytes 9-10: Steps (little-endian)
+Bytes 11-12: Distance in meters (little-endian)
+```
+
+### 0x2C (44) - Read SpO2 Log
+
+Same multi-packet structure as heart rate log (0x15).
+
 ### Other Commands
 
 | Command | Name | Notes |
 |---------|------|-------|
 | 0x08 | Power Off | Turns off the ring |
 | 0x37 | Read Stress | Stress measurement data |
-| 0x43 | Read Activity | Steps, calories, distance |
 
 ## Data Formats
 
