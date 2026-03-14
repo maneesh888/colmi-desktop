@@ -213,4 +213,82 @@ struct ColmiProtocolTests {
         #expect(activity.totalCalories == 60)
         #expect(activity.totalDistance == 300)
     }
+    
+    // MARK: - HR Log Settings Tests
+    
+    @Test("HR log settings read packet")
+    func testHRLogSettingsReadPacket() {
+        let packet = HRLogSettings.readPacket
+        
+        #expect(packet[0] == ColmiCommand.hrLogSettings.rawValue)
+        #expect(packet[1] == 0x01)  // Read mode
+        #expect(ColmiPacket.isValid(packet))
+    }
+    
+    @Test("HR log settings write packet - enabled")
+    func testHRLogSettingsWriteEnabled() {
+        let settings = HRLogSettings(enabled: true, intervalMinutes: 5)
+        let packet = settings.writePacket()
+        
+        #expect(packet[0] == ColmiCommand.hrLogSettings.rawValue)
+        #expect(packet[1] == 0x02)  // Write mode
+        #expect(packet[2] == 0x01)  // Enabled = 1
+        #expect(packet[3] == 0x05)  // 5 minutes
+        #expect(ColmiPacket.isValid(packet))
+    }
+    
+    @Test("HR log settings write packet - disabled")
+    func testHRLogSettingsWriteDisabled() {
+        let settings = HRLogSettings(enabled: false, intervalMinutes: 10)
+        let packet = settings.writePacket()
+        
+        #expect(packet[0] == ColmiCommand.hrLogSettings.rawValue)
+        #expect(packet[1] == 0x02)  // Write mode
+        #expect(packet[2] == 0x02)  // Disabled = 2
+        #expect(packet[3] == 0x0A)  // 10 minutes
+        #expect(ColmiPacket.isValid(packet))
+    }
+    
+    @Test("HR log settings parse - enabled")
+    func testHRLogSettingsParseEnabled() {
+        // Response: [0x16, 0x01, 0x01, 0x3C, ...]
+        // Enabled with 60 minute interval (0x3C = 60)
+        var packet = Data(count: 16)
+        packet[0] = ColmiCommand.hrLogSettings.rawValue
+        packet[1] = 0x01  // Unknown byte
+        packet[2] = 0x01  // Enabled
+        packet[3] = 0x3C  // 60 minutes
+        packet[15] = ColmiPacket.checksum(packet)
+        
+        let settings = HRLogSettings.parse(packet)
+        #expect(settings != nil)
+        #expect(settings?.enabled == true)
+        #expect(settings?.intervalMinutes == 60)
+    }
+    
+    @Test("HR log settings parse - disabled")
+    func testHRLogSettingsParseDisabled() {
+        var packet = Data(count: 16)
+        packet[0] = ColmiCommand.hrLogSettings.rawValue
+        packet[1] = 0x01
+        packet[2] = 0x02  // Disabled
+        packet[3] = 0x05  // 5 minutes (saved but not active)
+        packet[15] = ColmiPacket.checksum(packet)
+        
+        let settings = HRLogSettings.parse(packet)
+        #expect(settings != nil)
+        #expect(settings?.enabled == false)
+        #expect(settings?.intervalMinutes == 5)
+    }
+    
+    @Test("HR log settings presets")
+    func testHRLogSettingsPresets() {
+        #expect(HRLogSettings.interval5Min.enabled == true)
+        #expect(HRLogSettings.interval5Min.intervalMinutes == 5)
+        
+        #expect(HRLogSettings.interval30Min.enabled == true)
+        #expect(HRLogSettings.interval30Min.intervalMinutes == 30)
+        
+        #expect(HRLogSettings.disabled.enabled == false)
+    }
 }

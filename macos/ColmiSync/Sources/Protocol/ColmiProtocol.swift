@@ -18,6 +18,7 @@ enum ColmiCommand: UInt8 {
     case battery = 0x03
     case powerOff = 0x08
     case readHeartRate = 0x15       // 21 - Daily heart rate logs
+    case hrLogSettings = 0x16       // 22 - HR log settings (continuous monitoring)
     case readSpO2Log = 0x2C         // 44 - Daily SpO2 logs
     case readStress = 0x37          // 55 - Stress data
     case readActivity = 0x43        // 67 - Steps/activity
@@ -418,6 +419,52 @@ class ActivityParser {
             0x01                // Constant
         ])
         return ColmiPacket.make(command: .readActivity, payload: payload)
+    }
+}
+
+// MARK: - HR Log Settings (Continuous Monitoring)
+
+/// Settings for continuous heart rate monitoring
+struct HRLogSettings: Codable, Equatable {
+    let enabled: Bool
+    let intervalMinutes: Int  // 5, 10, 15, 30, 60 typical values
+    
+    /// Common interval presets
+    static let interval5Min = HRLogSettings(enabled: true, intervalMinutes: 5)
+    static let interval10Min = HRLogSettings(enabled: true, intervalMinutes: 10)
+    static let interval15Min = HRLogSettings(enabled: true, intervalMinutes: 15)
+    static let interval30Min = HRLogSettings(enabled: true, intervalMinutes: 30)
+    static let interval60Min = HRLogSettings(enabled: true, intervalMinutes: 60)
+    static let disabled = HRLogSettings(enabled: false, intervalMinutes: 5)
+    
+    /// Parse settings from response packet
+    /// Response format: [0x16, ?, enabled(1=on/2=off), interval, ...]
+    static func parse(_ data: Data) -> HRLogSettings? {
+        guard data.count >= 4,
+              ColmiPacket.commandType(data) == .hrLogSettings else {
+            return nil
+        }
+        
+        // Byte 2 = enabled (1=on, 2=off)
+        let rawEnabled = data[2]
+        let enabled = rawEnabled == 1
+        
+        // Byte 3 = interval in minutes
+        let interval = Int(data[3])
+        
+        return HRLogSettings(enabled: enabled, intervalMinutes: interval)
+    }
+    
+    /// Create request packet to READ current settings
+    static var readPacket: Data {
+        ColmiPacket.make(command: .hrLogSettings, payload: Data([0x01]))
+    }
+    
+    /// Create request packet to WRITE settings
+    func writePacket() -> Data {
+        let enabledByte: UInt8 = enabled ? 0x01 : 0x02
+        let intervalByte = UInt8(clamping: intervalMinutes)
+        return ColmiPacket.make(command: .hrLogSettings, payload: Data([0x02, enabledByte, intervalByte]))
     }
 }
 

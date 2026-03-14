@@ -32,6 +32,7 @@ class BLEManager: NSObject, ObservableObject {
     @Published var lastSyncDate: Date?
     @Published var todaySteps: Int?
     @Published var todayCalories: Int?
+    @Published var hrLogSettings: HRLogSettings?
     
     @Published var errorMessage: String?
     
@@ -64,6 +65,7 @@ class BLEManager: NSObject, ObservableObject {
     private var hrLogContinuation: CheckedContinuation<HeartRateLog?, Error>?
     private var activityContinuation: CheckedContinuation<DailyActivity?, Error>?
     private var spo2LogContinuation: CheckedContinuation<SpO2Log?, Error>?
+    private var hrLogSettingsContinuation: CheckedContinuation<HRLogSettings?, Error>?
     
     // MARK: - Initialization
     
@@ -207,6 +209,12 @@ class BLEManager: NSObject, ObservableObject {
                 logger.info("Battery: \(battery.level)%, charging: \(battery.isCharging)")
             }
             
+            // Get HR log settings (continuous monitoring config)
+            if let settings = try await getHRLogSettings() {
+                hrLogSettings = settings
+                logger.info("Continuous monitoring: \(settings.enabled ? "ON" : "OFF"), interval: \(settings.intervalMinutes)min")
+            }
+            
             // Get real-time heart rate
             if let hr = try await getRealTimeHeartRate() {
                 lastHeartRate = hr
@@ -288,6 +296,49 @@ class BLEManager: NSObject, ObservableObject {
     
     func findRing() async {
         await sendPacket(ColmiPacket.findDevicePacket)
+    }
+    
+    /// Get current HR log (continuous monitoring) settings
+    func getHRLogSettings() async throws -> HRLogSettings? {
+        await sendPacket(HRLogSettings.readPacket)
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            self.hrLogSettingsContinuation = continuation
+            
+            // Timeout after 5 seconds
+            Task {
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+                if self.hrLogSettingsContinuation != nil {
+                    self.hrLogSettingsContinuation?.resume(returning: nil)
+                    self.hrLogSettingsContinuation = nil
+                }
+            }
+        }
+    }
+    
+    /// Set HR log (continuous monitoring) settings
+    /// - Parameters:
+    ///   - enabled: Whether continuous monitoring is enabled
+    ///   - intervalMinutes: Monitoring interval (5, 10, 15, 30, 60 typical)
+    func setHRLogSettings(enabled: Bool, intervalMinutes: Int) async throws {
+        let settings = HRLogSettings(enabled: enabled, intervalMinutes: intervalMinutes)
+        await sendPacket(settings.writePacket())
+        
+        // Wait for response and update local state
+        if let newSettings = try await getHRLogSettings() {
+            hrLogSettings = newSettings
+            logger.info("HR log settings updated: enabled=\(newSettings.enabled), interval=\(newSettings.intervalMinutes)min")
+        }
+    }
+    
+    /// Enable continuous HR monitoring with specified interval
+    func enableContinuousMonitoring(intervalMinutes: Int = 5) async throws {
+        try await setHRLogSettings(enabled: true, intervalMinutes: intervalMinutes)
+    }
+    
+    /// Disable continuous HR monitoring
+    func disableContinuousMonitoring() async throws {
+        try await setHRLogSettings(enabled: false, intervalMinutes: 5)
     }
     
     // MARK: - Private Methods
@@ -491,6 +542,16 @@ class BLEManager: NSObject, ObservableObject {
                 logger.info("Received SpO2 log: \(log.validReadings.count) readings")
                 spo2LogContinuation?.resume(returning: log)
                 spo2LogContinuation = nil
+            }
+            
+        case .hrLogSettings:
+            if let settings = HRLogSettings.parse(data) {
+                logger.info("HR log settings: enabled=\(settings.enabled), interval=\(settings.intervalMinutes)min")
+                Task { @MainActor in
+                    self.hrLogSettings = settings
+                }
+                hrLogSettingsContinuation?.resume(returning: settings)
+                hrLogSettingsContinuation = nil
             }
             
         default:

@@ -44,6 +44,16 @@ struct MenuBarView: View {
                         }
                     }
                     .disabled(bleManager.isSyncing)
+                    
+                    Button {
+                        Task {
+                            await bleManager.findRing()
+                        }
+                    } label: {
+                        Image(systemName: "bell.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Find Ring (vibrate)")
                 } else {
                     Button(bleManager.isScanning ? "Stop Scan" : "Scan") {
                         if bleManager.isScanning {
@@ -98,6 +108,62 @@ struct MenuBarView: View {
             
             if let calories = bleManager.todayCalories {
                 MetricRow(icon: "flame.fill", label: "Calories", value: "\(calories) cal", color: .pink)
+            }
+            
+            // Continuous Monitoring Settings
+            if let settings = bleManager.hrLogSettings {
+                Divider()
+                    .padding(.vertical, 4)
+                
+                HStack {
+                    Image(systemName: settings.enabled ? "waveform.path.ecg" : "waveform.path.ecg.rectangle")
+                        .foregroundColor(settings.enabled ? .green : .gray)
+                        .frame(width: 20)
+                    Text("Continuous HR")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    
+                    if settings.enabled {
+                        Menu {
+                            Button("Every 5 min") {
+                                Task { try? await bleManager.enableContinuousMonitoring(intervalMinutes: 5) }
+                            }
+                            Button("Every 10 min") {
+                                Task { try? await bleManager.enableContinuousMonitoring(intervalMinutes: 10) }
+                            }
+                            Button("Every 15 min") {
+                                Task { try? await bleManager.enableContinuousMonitoring(intervalMinutes: 15) }
+                            }
+                            Button("Every 30 min") {
+                                Task { try? await bleManager.enableContinuousMonitoring(intervalMinutes: 30) }
+                            }
+                            Button("Every 60 min") {
+                                Task { try? await bleManager.enableContinuousMonitoring(intervalMinutes: 60) }
+                            }
+                            Divider()
+                            Button("Disable") {
+                                Task { try? await bleManager.disableContinuousMonitoring() }
+                            }
+                        } label: {
+                            HStack(spacing: 2) {
+                                Text("\(settings.intervalMinutes)m")
+                                    .font(.caption.weight(.medium))
+                                Image(systemName: "chevron.down")
+                                    .font(.caption2)
+                            }
+                            .foregroundColor(.green)
+                        }
+                        .menuStyle(.borderlessButton)
+                    } else {
+                        Button("Enable") {
+                            Task { try? await bleManager.enableContinuousMonitoring(intervalMinutes: 5) }
+                        }
+                        .font(.caption)
+                        .buttonStyle(.plain)
+                        .foregroundColor(.blue)
+                    }
+                }
             }
             
             if bleManager.isSyncing {

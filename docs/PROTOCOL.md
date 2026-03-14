@@ -192,12 +192,39 @@ Bytes 11-12: Distance in meters (little-endian)
 
 Same multi-packet structure as heart rate log (0x15).
 
+### 0x16 (22) - HR Log Settings (Continuous Monitoring)
+
+Controls automatic heart rate recording.
+
+**Read Request:**
+```
+Byte 0: 0x16
+Byte 1: 0x01 (read mode)
+```
+
+**Write Request:**
+```
+Byte 0:  0x16
+Byte 1:  0x02 (write mode)
+Byte 2:  Enabled (0x01=on, 0x02=off)
+Byte 3:  Interval in minutes (5, 10, 15, 30, 60 typical)
+Byte 15: Checksum
+```
+
+**Response:**
+```
+Byte 0: 0x16
+Byte 1: Unknown (usually 0x01)
+Byte 2: Enabled (0x01=on, 0x02=off)
+Byte 3: Interval in minutes
+```
+
 ### Other Commands
 
 | Command | Name | Notes |
 |---------|------|-------|
 | 0x08 | Power Off | Turns off the ring |
-| 0x37 | Read Stress | Stress measurement data |
+| 0x37 | Read Stress | Stress measurement data (format undocumented) |
 
 ## Data Formats
 
