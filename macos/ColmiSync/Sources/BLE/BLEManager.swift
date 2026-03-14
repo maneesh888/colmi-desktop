@@ -681,12 +681,18 @@ extension BLEManager: CBCentralManagerDelegate {
             self.txCharacteristic = nil
             self.connectedRing = nil
             self.isConnected = false
+            self.stopBackgroundSync()
             
             if let error = error {
                 logger.error("Disconnected with error: \(error.localizedDescription)")
             } else {
                 logger.info("Disconnected")
             }
+            
+            // Auto-reconnect after unexpected disconnect
+            logger.info("Will attempt reconnect in 5 seconds...")
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            self.tryAutoReconnect()
         }
     }
 }
