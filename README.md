@@ -86,6 +86,23 @@ swift run ColmiSync --cli --scan-time 60 --retries 5
 - Results are saved to `~/clawd/health/latest.json`
 - Ring must be paired first via the menu bar app
 
+### Background Sync (launchd)
+
+For automatic hourly syncs, install the background service:
+
+```bash
+# Build and install
+./scripts/install-launchd.sh
+
+# Commands
+launchctl start com.colmisync.sync   # Run now
+launchctl stop com.colmisync.sync    # Stop
+tail -f ~/.colmisync/sync.log        # View logs
+
+# Uninstall
+./scripts/uninstall-launchd.sh
+```
+
 ### Data Storage
 
 Health data is stored locally:
