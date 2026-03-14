@@ -97,8 +97,8 @@ struct BatteryInfo {
 // MARK: - Real-time Heart Rate
 
 enum RealTimeType: UInt8 {
-    case heartRate = 0x00
-    case spO2 = 0x02
+    case heartRate = 0x01  // Reading type in protocol
+    case spO2 = 0x03       // Reading type in protocol
 }
 
 struct RealTimeReading {
@@ -126,15 +126,16 @@ struct RealTimeReading {
     }
     
     static func startPacket(type: RealTimeType) -> Data {
-        // Both HR and SpO2 use command 0x69 (START_REAL_TIME)
+        // Command 0x69 (START_REAL_TIME)
         // Payload: [reading_type, action] where action=1 is START
+        // HR: [0x01, 0x01], SpO2: [0x03, 0x01]
         return ColmiPacket.make(command: .realTimeHR, payload: Data([type.rawValue, 0x01]))
     }
     
     static func stopPacket(type: RealTimeType) -> Data {
-        // Stop uses command 0x6A (STOP_REAL_TIME)
-        // Payload: [reading_type, 0, 0]
-        return ColmiPacket.make(command: .realTimeSpO2, payload: Data([type.rawValue, 0x00, 0x00]))
+        // Command 0x6A (STOP_REAL_TIME)
+        // Payload: [reading_type, 0x00]
+        return ColmiPacket.make(command: .realTimeSpO2, payload: Data([type.rawValue, 0x00]))
     }
 }
 

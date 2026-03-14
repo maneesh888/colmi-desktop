@@ -64,15 +64,25 @@ struct ColmiProtocolTests {
         let start = RealTimeReading.startPacket(type: .heartRate)
         let stop = RealTimeReading.stopPacket(type: .heartRate)
         
-        #expect(start[0] == ColmiCommand.realTimeHR.rawValue)
-        #expect(start[1] == 0x01)  // Start flag
-        #expect(start[2] == 0x00)  // HR type
+        // Start packet format: [cmd, type, action=1]
+        #expect(start[0] == ColmiCommand.realTimeHR.rawValue)  // 0x69
+        #expect(start[1] == RealTimeType.heartRate.rawValue)   // 0x01 (HR type)
+        #expect(start[2] == 0x01)                              // Start action
         
-        #expect(stop[0] == ColmiCommand.realTimeHR.rawValue)
-        #expect(stop[1] == 0x00)   // Stop flag
+        // Stop packet format: [cmd, type, action=0]
+        #expect(stop[0] == ColmiCommand.realTimeSpO2.rawValue) // 0x6A (stop command)
+        #expect(stop[1] == RealTimeType.heartRate.rawValue)    // 0x01 (HR type)
+        #expect(stop[2] == 0x00)                               // Stop action
         
         #expect(ColmiPacket.isValid(start))
         #expect(ColmiPacket.isValid(stop))
+        
+        // Also test SpO2 packets
+        let spo2Start = RealTimeReading.startPacket(type: .spO2)
+        let spo2Stop = RealTimeReading.stopPacket(type: .spO2)
+        
+        #expect(spo2Start[1] == RealTimeType.spO2.rawValue)    // 0x03 (SpO2 type)
+        #expect(spo2Stop[1] == RealTimeType.spO2.rawValue)     // 0x03 (SpO2 type)
     }
     
     @Test("HR log request packet")
