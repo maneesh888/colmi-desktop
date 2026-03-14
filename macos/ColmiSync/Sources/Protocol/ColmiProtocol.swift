@@ -251,7 +251,8 @@ class HeartRateLogParser {
     static func requestPacket(for date: Date) -> Data {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)
-        let timestamp = UInt32(startOfDay.timeIntervalSince1970)
+        let interval = startOfDay.timeIntervalSince1970
+        let timestamp = UInt32(clamping: Int64(max(0, interval)))
         
         var payload = Data(count: 4)
         payload.withUnsafeMutableBytes { ptr in
@@ -408,8 +409,9 @@ class ActivityParser {
     /// Create request packet for steps data
     /// - Parameter dayOffset: 0 = today, 1 = yesterday, etc.
     static func requestPacket(dayOffset: Int = 0) -> Data {
+        let safeDayOffset = UInt8(clamping: max(0, dayOffset))
         let payload = Data([
-            UInt8(dayOffset),   // Day offset
+            safeDayOffset,      // Day offset
             0x0F,               // Constant
             0x00,               // Unknown
             0x5F,               // Threshold?
@@ -533,7 +535,8 @@ class SpO2LogParser {
     static func requestPacket(for date: Date) -> Data {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)
-        let timestamp = UInt32(startOfDay.timeIntervalSince1970)
+        let interval = startOfDay.timeIntervalSince1970
+        let timestamp = UInt32(clamping: Int64(max(0, interval)))
         
         var payload = Data(count: 4)
         payload.withUnsafeMutableBytes { ptr in
