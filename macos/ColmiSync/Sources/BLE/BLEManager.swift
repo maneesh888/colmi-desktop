@@ -674,6 +674,8 @@ extension BLEManager: CBCentralManagerDelegate {
         Task { @MainActor in
             connectionContinuation?.resume(throwing: error ?? BLEError.connectionFailed)
             connectionContinuation = nil
+            // Restart scanning after connection failure
+            self.startScanning()
         }
     }
     
