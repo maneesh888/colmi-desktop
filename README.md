@@ -129,14 +129,32 @@ See [docs/PROTOCOL.md](docs/PROTOCOL.md) for packet formats.
 
 ## Roadmap
 
+### Core Features
 - [x] Ring discovery & connection
 - [x] Real-time heart rate
-- [x] SpO2 monitoring
-- [x] Activity tracking
+- [x] SpO2 monitoring  
+- [x] Activity tracking (steps/calories)
+- [x] Battery level
+- [x] Find ring (vibrate)
 - [x] Auto-reconnect
-- [ ] Sleep data parsing
+
+### Health Data (In Progress)
+- [ ] HR logs (historical 24h data)
+- [ ] SpO2 logs (historical data)
+- [ ] Sleep tracking & analysis
+- [ ] Stress data
+- [ ] HRV (Heart Rate Variability)
+- [ ] Continuous monitoring settings
+
+### Clawdbot Integration
+- [ ] Health data skill for Clawdbot
+- [ ] Daily health summaries
+- [ ] Anomaly detection (unusual HR, poor sleep)
+- [ ] Natural language queries ("How was my sleep?")
+- [ ] Proactive health insights
+
+### Polish
 - [ ] Background sync daemon
-- [ ] Clawdbot skill/integration
 - [ ] Health trend charts
 - [ ] Proper .app bundle & DMG releases
 - [ ] Linux support
