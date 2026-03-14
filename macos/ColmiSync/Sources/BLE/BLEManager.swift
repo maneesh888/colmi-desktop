@@ -64,7 +64,8 @@ class BLEManager: NSObject, ObservableObject {
     // Continuations for async/await
     private var connectionContinuation: CheckedContinuation<Void, Error>?
     private var batteryContinuation: CheckedContinuation<BatteryInfo, Error>?
-    private var realTimeContinuation: CheckedContinuation<Int, Error>?
+    private var hrContinuation: CheckedContinuation<Int, Error>?
+    private var spo2Continuation: CheckedContinuation<Int, Error>?
     private var hrLogContinuation: CheckedContinuation<HeartRateLog?, Error>?
     private var activityContinuation: CheckedContinuation<DailyActivity?, Error>?
     private var spo2LogContinuation: CheckedContinuation<SpO2Log?, Error>?
@@ -426,14 +427,14 @@ class BLEManager: NSObject, ObservableObject {
         }
         
         return try await withCheckedThrowingContinuation { continuation in
-            self.realTimeContinuation = continuation
+            self.hrContinuation = continuation
             
             // Timeout after 30 seconds
             Task {
                 try await Task.sleep(nanoseconds: 30_000_000_000)
-                if self.realTimeContinuation != nil {
-                    self.realTimeContinuation?.resume(throwing: BLEError.timeout)
-                    self.realTimeContinuation = nil
+                if self.hrContinuation != nil {
+                    self.hrContinuation?.resume(throwing: BLEError.timeout)
+                    self.hrContinuation = nil
                 }
             }
         }
@@ -449,14 +450,14 @@ class BLEManager: NSObject, ObservableObject {
         }
         
         return try await withCheckedThrowingContinuation { continuation in
-            self.realTimeContinuation = continuation
+            self.spo2Continuation = continuation
             
             // Timeout after 30 seconds
             Task {
                 try await Task.sleep(nanoseconds: 30_000_000_000)
-                if self.realTimeContinuation != nil {
-                    self.realTimeContinuation?.resume(throwing: BLEError.timeout)
-                    self.realTimeContinuation = nil
+                if self.spo2Continuation != nil {
+                    self.spo2Continuation?.resume(throwing: BLEError.timeout)
+                    self.spo2Continuation = nil
                 }
             }
         }
@@ -555,12 +556,14 @@ class BLEManager: NSObject, ObservableObject {
                 Task { @MainActor in
                     if reading.type == .heartRate {
                         self.lastHeartRate = reading.value
+                        self.hrContinuation?.resume(returning: reading.value)
+                        self.hrContinuation = nil
                     } else {
                         self.lastSpO2 = reading.value
+                        self.spo2Continuation?.resume(returning: reading.value)
+                        self.spo2Continuation = nil
                     }
                 }
-                realTimeContinuation?.resume(returning: reading.value)
-                realTimeContinuation = nil
             }
             
         case .readHeartRate:
