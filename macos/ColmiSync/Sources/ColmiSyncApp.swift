@@ -7,7 +7,10 @@ struct ColmiSyncApp: App {
     init() {
         // Check for CLI mode
         if CommandLine.arguments.contains("--cli") || CommandLine.arguments.contains("--sync") {
+            let args = CLISync.parseArgs(CommandLine.arguments)
             let cli = CLISync()
+            cli.scanTimeout = TimeInterval(args.scanTime)
+            cli.maxRetries = args.retries
             cli.run()
             exit(0)
         }
