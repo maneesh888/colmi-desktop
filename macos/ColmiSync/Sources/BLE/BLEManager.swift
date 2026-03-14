@@ -75,8 +75,8 @@ class BLEManager: NSObject, ObservableObject {
         discoveredRings.removeAll()
         isScanning = true
         
-        let serviceUUIDs = [CBUUID(string: ColmiUUID.service)]
-        centralManager.scanForPeripherals(withServices: serviceUUIDs, options: [
+        // Scan for ALL BLE devices - rings don't always advertise service UUIDs
+        centralManager.scanForPeripherals(withServices: nil, options: [
             CBCentralManagerScanOptionAllowDuplicatesKey: false
         ])
         
