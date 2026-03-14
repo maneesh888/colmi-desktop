@@ -45,6 +45,9 @@ class BLEManager: NSObject, ObservableObject {
     
     private let logger = Logger(subsystem: "com.colmisync", category: "BLE")
     
+    // Background sync timer
+    private var syncTimer: Timer?
+    
     // Persistence
     private var savedRingFile: URL {
         let dir = FileManager.default.homeDirectoryForCurrentUser
@@ -122,6 +125,8 @@ class BLEManager: NSObject, ObservableObject {
     
     func disconnect() {
         guard let peripheral = peripheral else { return }
+        
+        stopBackgroundSync()
         centralManager.cancelPeripheralConnection(peripheral)
         
         self.peripheral = nil
@@ -352,6 +357,25 @@ class BLEManager: NSObject, ObservableObject {
         
         // Pull historical data (last 7 days)
         await syncHistory(days: 7)
+        
+        // Start background sync timer (every 5 minutes)
+        startBackgroundSync()
+    }
+    
+    private func startBackgroundSync() {
+        syncTimer?.invalidate()
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.syncData()
+            }
+        }
+        logger.info("Background sync started (every 5 minutes)")
+    }
+    
+    private func stopBackgroundSync() {
+        syncTimer?.invalidate()
+        syncTimer = nil
+        logger.info("Background sync stopped")
     }
     
     private func getBattery() async throws -> BatteryInfo? {
