@@ -228,8 +228,8 @@ class HeartRateLogParser {
         }
         receivedPackets += 1
         
-        // Check if complete
-        if subType == UInt8(expectedPackets - 1), let ts = timestamp {
+        // Check if complete (guard against expectedPackets == 0)
+        if expectedPackets > 0, subType == UInt8(truncatingIfNeeded: expectedPackets - 1), let ts = timestamp {
             let result = HeartRateLog(date: ts, readings: normalizeReadings())
             reset()
             return result
@@ -567,8 +567,8 @@ class SpO2LogParser {
         }
         receivedPackets += 1
         
-        // Check if complete
-        if subType == UInt8(expectedPackets - 1), let ts = timestamp {
+        // Check if complete (guard against expectedPackets == 0)
+        if expectedPackets > 0, subType == UInt8(truncatingIfNeeded: expectedPackets - 1), let ts = timestamp {
             let result = SpO2Log(date: ts, readings: normalizeReadings())
             reset()
             return result
