@@ -211,10 +211,16 @@ class BLEManager: NSObject, ObservableObject {
             if let hr = try await getRealTimeHeartRate() {
                 lastHeartRate = hr
                 logger.info("Heart rate: \(hr) BPM")
-                
-                // Save to store
-                try? await DataStore.shared.saveLatestReading(heartRate: hr, battery: batteryLevel)
             }
+            
+            // Get real-time SpO2
+            if let spo2 = try await getRealTimeSpO2() {
+                lastSpO2 = spo2
+                logger.info("SpO2: \(spo2)%")
+            }
+            
+            // Save to store
+            try? await DataStore.shared.saveLatestReading(heartRate: lastHeartRate, spO2: lastSpO2, battery: batteryLevel)
             
             // Get today's steps/activity
             if let activity = try await getActivity(dayOffset: 0) {
@@ -318,6 +324,29 @@ class BLEManager: NSObject, ObservableObject {
         defer {
             Task {
                 await self.sendPacket(RealTimeReading.stopPacket(type: .heartRate))
+            }
+        }
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            self.realTimeContinuation = continuation
+            
+            // Timeout after 30 seconds
+            Task {
+                try await Task.sleep(nanoseconds: 30_000_000_000)
+                if self.realTimeContinuation != nil {
+                    self.realTimeContinuation?.resume(throwing: BLEError.timeout)
+                    self.realTimeContinuation = nil
+                }
+            }
+        }
+    }
+    
+    private func getRealTimeSpO2() async throws -> Int? {
+        await sendPacket(RealTimeReading.startPacket(type: .spO2))
+        
+        defer {
+            Task {
+                await self.sendPacket(RealTimeReading.stopPacket(type: .spO2))
             }
         }
         
