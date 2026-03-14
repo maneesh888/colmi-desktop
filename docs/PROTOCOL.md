@@ -116,32 +116,47 @@ Byte 1:    N (sub-type, 2..N)
 Bytes 2-14: 13 HR values each
 ```
 
-### 0x69 (105) - Real-Time Heart Rate
+### 0x69 (105) - Start Real-Time Reading
 
-**Start Request:**
+Starts a real-time measurement (heart rate or SpO2).
+
+**Request:**
+```
+Byte 0: 0x69 (command)
+Byte 1: Reading type (0x01=HR, 0x03=SpO2)
+Byte 2: 0x01 (start action)
+```
+
+**Response (continuous):**
 ```
 Byte 0: 0x69
-Byte 1: 0x01 (start)
-Byte 2: 0x00 (HR type)
+Byte 1: Reading type (0x01=HR, 0x03=SpO2)
+Byte 2: Error code (0x00=success)
+Byte 3: Value (BPM or SpO2%)
 ```
 
-**Stop Request:**
+**Important notes:**
+- Responses are sent continuously while measurement is active
+- Initial responses may have value=0 while the sensor warms up
+- **Wait up to 30 seconds** for a valid (non-zero) reading
+- Ring should be snug on finger for accurate readings
+- Always send stop command when done to save battery
+
+### 0x6A (106) - Stop Real-Time Reading
+
+**Request:**
 ```
-Byte 0: 0x69
-Byte 1: 0x00 (stop)
-Byte 2: 0x00 (HR type)
+Byte 0: 0x6A (command)
+Byte 1: Reading type (0x01=HR, 0x03=SpO2)
+Byte 2: 0x00 (stop action)
 ```
 
-**Response:**
-```
-Byte 0: 0x69
-Byte 1: 0x00 (success) or 0xFF (error)
-Byte 2: HR value (BPM)
-```
+### Real-Time Reading Type Values
 
-### 0x6A (106) - Real-Time SpO2
-
-Same structure as real-time HR, but with command 0x6A and type 0x02.
+| Type | Value | Description |
+|------|-------|-------------|
+| Heart Rate | 0x01 | BPM (30-200 typical) |
+| SpO2 | 0x03 | Percentage (90-100 typical) |
 
 ### 0x50 (80) - Find Device
 

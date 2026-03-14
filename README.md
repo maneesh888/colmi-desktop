@@ -65,6 +65,27 @@ swift run
 
 The app appears in your menu bar. Click to scan, connect your ring, and start syncing.
 
+### CLI Mode
+
+For scripted/cron usage, run in CLI mode:
+
+```bash
+# Basic sync (reads battery, HR, SpO2)
+swift run ColmiSync --cli
+
+# With options
+swift run ColmiSync --cli --scan-time 60 --retries 5
+```
+
+**Options:**
+- `--scan-time <seconds>` - Time to scan for ring (default: 30)
+- `--retries <count>` - Connection retry attempts (default: 3)
+
+**Notes:**
+- HR and SpO2 measurements take up to 30 seconds each (sensor warm-up)
+- Results are saved to `~/clawd/health/latest.json`
+- Ring must be paired first via the menu bar app
+
 ### Data Storage
 
 Health data is stored locally:
@@ -138,15 +159,19 @@ See [docs/PROTOCOL.md](docs/PROTOCOL.md) for packet formats.
 - [x] Find ring (vibrate)
 - [x] Auto-reconnect
 
-### Health Data (In Progress)
-- [ ] HR logs (historical 24h data)
-- [ ] SpO2 logs (historical data)
-- [ ] Sleep tracking & analysis
-- [ ] Stress data
-- [ ] HRV (Heart Rate Variability)
-- [ ] Continuous monitoring settings
+### Health Data
+- [x] HR logs (historical 24h data, 288 readings/day)
+- [x] SpO2 logs (historical data)
+- [x] Continuous monitoring settings (enable/disable, interval)
+- [x] 7-day history sync on connect
+- [x] JSON storage for all data types
+- [x] CLI mode for scripted sync
+- [ ] Sleep tracking & analysis (infer from HR patterns)
+- [ ] Stress data (protocol undocumented)
+- [ ] HRV (may not be hardware supported)
 
 ### Clawdbot Integration
+- [x] Local JSON format for AI consumption
 - [ ] Health data skill for Clawdbot
 - [ ] Daily health summaries
 - [ ] Anomaly detection (unusual HR, poor sleep)
@@ -154,10 +179,11 @@ See [docs/PROTOCOL.md](docs/PROTOCOL.md) for packet formats.
 - [ ] Proactive health insights
 
 ### Polish
-- [ ] Background sync daemon
+- [ ] Background sync daemon (launchd)
 - [ ] Health trend charts
 - [ ] Proper .app bundle & DMG releases
-- [ ] Linux support
+- [ ] macOS notifications
+- [ ] Linux support (maybe)
 
 ## Contributing
 
