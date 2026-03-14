@@ -44,6 +44,10 @@ class BLEManager: NSObject, ObservableObject {
     
     private let logger = Logger(subsystem: "com.colmisync", category: "BLE")
     
+    // Persistence keys
+    private let savedRingIdKey = "savedRingIdentifier"
+    private let savedRingNameKey = "savedRingName"
+    
     // Parsers
     private let hrLogParser = HeartRateLogParser()
     private let activityParser = ActivityParser()
@@ -101,6 +105,10 @@ class BLEManager: NSObject, ObservableObject {
         peripheral = ring.peripheral
         isConnected = true
         
+        // Save for auto-reconnect
+        UserDefaults.standard.set(ring.id.uuidString, forKey: savedRingIdKey)
+        UserDefaults.standard.set(ring.name, forKey: savedRingNameKey)
+        
         logger.info("Connected to \(ring.name)")
         
         // Initial setup after connection
@@ -118,6 +126,51 @@ class BLEManager: NSObject, ObservableObject {
         self.isConnected = false
         
         logger.info("Disconnected")
+    }
+    
+    /// Try to reconnect to previously paired ring
+    func tryAutoReconnect() {
+        guard let savedIdString = UserDefaults.standard.string(forKey: savedRingIdKey),
+              let savedId = UUID(uuidString: savedIdString) else {
+            logger.info("No saved ring to reconnect")
+            return
+        }
+        
+        let savedName = UserDefaults.standard.string(forKey: savedRingNameKey) ?? "Saved Ring"
+        logger.info("Attempting auto-reconnect to \(savedName)")
+        
+        let peripherals = centralManager.retrievePeripherals(withIdentifiers: [savedId])
+        
+        if let peripheral = peripherals.first {
+            let ring = DiscoveredRing(
+                id: peripheral.identifier,
+                name: savedName,
+                rssi: 0,
+                peripheral: peripheral
+            )
+            
+            Task {
+                do {
+                    try await connect(to: ring)
+                    logger.info("Auto-reconnected to \(savedName)")
+                } catch {
+                    logger.error("Auto-reconnect failed: \(error.localizedDescription)")
+                    // Fall back to scanning
+                    startScanning()
+                }
+            }
+        } else {
+            logger.info("Saved ring not found, starting scan")
+            startScanning()
+        }
+    }
+    
+    /// Forget saved ring
+    func forgetRing() {
+        UserDefaults.standard.removeObject(forKey: savedRingIdKey)
+        UserDefaults.standard.removeObject(forKey: savedRingNameKey)
+        disconnect()
+        logger.info("Forgot saved ring")
     }
     
     func syncData() async {
@@ -401,6 +454,8 @@ extension BLEManager: CBCentralManagerDelegate {
             switch central.state {
             case .poweredOn:
                 logger.info("Bluetooth is powered on")
+                // Try to reconnect to saved ring
+                self.tryAutoReconnect()
             case .poweredOff:
                 logger.warning("Bluetooth is powered off")
                 errorMessage = "Please turn on Bluetooth"
