@@ -296,8 +296,11 @@ class BLEManager: NSObject, ObservableObject {
         // Set time on ring
         await sendPacket(ColmiPacket.setTimePacket())
         
-        // Get initial data
+        // Get current readings
         await syncData()
+        
+        // Pull historical data (last 7 days)
+        await syncHistory(days: 7)
     }
     
     private func getBattery() async throws -> BatteryInfo? {

@@ -31,9 +31,16 @@ struct MenuBarView: View {
             // Actions
             HStack {
                 if bleManager.isConnected {
-                    Button("Sync Now") {
+                    Button("Sync") {
                         Task {
                             await bleManager.syncData()
+                        }
+                    }
+                    .disabled(bleManager.isSyncing)
+                    
+                    Button("Full Sync") {
+                        Task {
+                            await bleManager.syncHistory(days: 7)
                         }
                     }
                     .disabled(bleManager.isSyncing)
