@@ -166,11 +166,31 @@ class BLEManager: NSObject, ObservableObject {
                     logger.error("Auto-reconnect failed: \(error.localizedDescription)")
                     // Fall back to scanning
                     startScanning()
+                    // Schedule retry
+                    scheduleReconnectRetry()
                 }
             }
         } else {
             logger.info("Saved ring not found nearby, starting scan")
             startScanning()
+            // Schedule retry
+            scheduleReconnectRetry()
+        }
+    }
+    
+    private var reconnectTimer: Timer?
+    
+    private func scheduleReconnectRetry() {
+        reconnectTimer?.invalidate()
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self, !self.isConnected else { 
+                    self?.reconnectTimer?.invalidate()
+                    return 
+                }
+                self.logger.info("Retry reconnect...")
+                self.tryAutoReconnect()
+            }
         }
     }
     
