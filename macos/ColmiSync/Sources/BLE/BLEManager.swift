@@ -44,9 +44,13 @@ class BLEManager: NSObject, ObservableObject {
     
     private let logger = Logger(subsystem: "com.colmisync", category: "BLE")
     
-    // Persistence keys
-    private let savedRingIdKey = "savedRingIdentifier"
-    private let savedRingNameKey = "savedRingName"
+    // Persistence
+    private var savedRingFile: URL {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".colmisync")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("paired_ring.json")
+    }
     
     // Parsers
     private let hrLogParser = HeartRateLogParser()
@@ -106,8 +110,7 @@ class BLEManager: NSObject, ObservableObject {
         isConnected = true
         
         // Save for auto-reconnect
-        UserDefaults.standard.set(ring.id.uuidString, forKey: savedRingIdKey)
-        UserDefaults.standard.set(ring.name, forKey: savedRingNameKey)
+        saveRingToFile(id: ring.id.uuidString, name: ring.name)
         
         logger.info("Connected to \(ring.name)")
         
@@ -130,13 +133,12 @@ class BLEManager: NSObject, ObservableObject {
     
     /// Try to reconnect to previously paired ring
     func tryAutoReconnect() {
-        guard let savedIdString = UserDefaults.standard.string(forKey: savedRingIdKey),
+        guard let (savedIdString, savedName) = loadRingFromFile(),
               let savedId = UUID(uuidString: savedIdString) else {
             logger.info("No saved ring to reconnect")
             return
         }
         
-        let savedName = UserDefaults.standard.string(forKey: savedRingNameKey) ?? "Saved Ring"
         logger.info("Attempting auto-reconnect to \(savedName)")
         
         let peripherals = centralManager.retrievePeripherals(withIdentifiers: [savedId])
@@ -160,17 +162,36 @@ class BLEManager: NSObject, ObservableObject {
                 }
             }
         } else {
-            logger.info("Saved ring not found, starting scan")
+            logger.info("Saved ring not found nearby, starting scan")
             startScanning()
         }
     }
     
     /// Forget saved ring
     func forgetRing() {
-        UserDefaults.standard.removeObject(forKey: savedRingIdKey)
-        UserDefaults.standard.removeObject(forKey: savedRingNameKey)
+        try? FileManager.default.removeItem(at: savedRingFile)
         disconnect()
         logger.info("Forgot saved ring")
+    }
+    
+    // MARK: - File Persistence
+    
+    private func saveRingToFile(id: String, name: String) {
+        let data: [String: String] = ["id": id, "name": name]
+        if let json = try? JSONEncoder().encode(data) {
+            try? json.write(to: savedRingFile)
+            logger.info("Saved ring to \(self.savedRingFile.path)")
+        }
+    }
+    
+    private func loadRingFromFile() -> (id: String, name: String)? {
+        guard let json = try? Data(contentsOf: savedRingFile),
+              let data = try? JSONDecoder().decode([String: String].self, from: json),
+              let id = data["id"],
+              let name = data["name"] else {
+            return nil
+        }
+        return (id, name)
     }
     
     func syncData() async {
@@ -490,6 +511,14 @@ extension BLEManager: CBCentralManagerDelegate {
             if !discoveredRings.contains(ring) {
                 discoveredRings.append(ring)
                 logger.info("Discovered ring: \(name) (RSSI: \(RSSI))")
+                
+                // Auto-connect if this is our saved ring
+                if let (savedId, _) = loadRingFromFile(), savedId == peripheral.identifier.uuidString {
+                    logger.info("Found saved ring, auto-connecting...")
+                    Task {
+                        try? await connect(to: ring)
+                    }
+                }
             }
         }
     }
