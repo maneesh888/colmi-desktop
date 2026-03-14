@@ -383,19 +383,36 @@ class BLEManager: NSObject, ObservableObject {
         startBackgroundSync()
     }
     
+    private var keepAliveTimer: Timer?
+    
     private func startBackgroundSync() {
         syncTimer?.invalidate()
+        keepAliveTimer?.invalidate()
+        
+        // Full sync every 5 minutes
         syncTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.syncData()
             }
         }
-        logger.info("Background sync started (every 5 minutes)")
+        
+        // Keep-alive ping every 30 seconds (just read battery to keep connection active)
+        keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self, self.isConnected else { return }
+                _ = try? await self.getBattery()
+                self.logger.debug("Keep-alive ping sent")
+            }
+        }
+        
+        logger.info("Background sync started (every 5 minutes, keep-alive every 30s)")
     }
     
     private func stopBackgroundSync() {
         syncTimer?.invalidate()
         syncTimer = nil
+        keepAliveTimer?.invalidate()
+        keepAliveTimer = nil
         logger.info("Background sync stopped")
     }
     
