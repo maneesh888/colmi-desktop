@@ -112,9 +112,13 @@ struct RealTimeReading {
             return nil
         }
         
+        // Packet format: [cmd, readingType, errorCode, value, ...]
+        // byte 1 = reading type (1=HR, 3=SpO2)
+        // byte 2 = error code (0 = no error)
+        // byte 3 = actual value
         let type: RealTimeType = cmd == .realTimeHR ? .heartRate : .spO2
-        let isError = data[1] == 0xFF
-        let value = Int(data[2])
+        let isError = data[2] != 0
+        let value = Int(data[3])
         
         return RealTimeReading(type: type, value: value, isError: isError)
     }
