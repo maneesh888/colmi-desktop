@@ -109,7 +109,7 @@ struct RealTimeReading {
     static func parse(_ data: Data) -> RealTimeReading? {
         guard data.count >= 4,
               let cmd = ColmiPacket.commandType(data),
-              cmd == .realTimeHR || cmd == .realTimeSpO2 else {
+              cmd == .realTimeHR else {  // All real-time responses come on 0x69
             return nil
         }
         
@@ -117,7 +117,8 @@ struct RealTimeReading {
         // byte 1 = reading type (1=HR, 3=SpO2)
         // byte 2 = error code (0 = no error)
         // byte 3 = actual value
-        let type: RealTimeType = cmd == .realTimeHR ? .heartRate : .spO2
+        let readingType = data[1]
+        let type: RealTimeType = readingType == RealTimeType.spO2.rawValue ? .spO2 : .heartRate
         let isError = data[2] != 0
         let value = Int(data[3])
         
@@ -125,13 +126,15 @@ struct RealTimeReading {
     }
     
     static func startPacket(type: RealTimeType) -> Data {
-        let cmd: ColmiCommand = type == .heartRate ? .realTimeHR : .realTimeSpO2
-        return ColmiPacket.make(command: cmd, payload: Data([0x01, type.rawValue]))
+        // Both HR and SpO2 use command 0x69 (START_REAL_TIME)
+        // Payload: [reading_type, action] where action=1 is START
+        return ColmiPacket.make(command: .realTimeHR, payload: Data([type.rawValue, 0x01]))
     }
     
     static func stopPacket(type: RealTimeType) -> Data {
-        let cmd: ColmiCommand = type == .heartRate ? .realTimeHR : .realTimeSpO2
-        return ColmiPacket.make(command: cmd, payload: Data([0x00, type.rawValue]))
+        // Stop uses command 0x6A (STOP_REAL_TIME)
+        // Payload: [reading_type, 0, 0]
+        return ColmiPacket.make(command: .realTimeSpO2, payload: Data([type.rawValue, 0x00, 0x00]))
     }
 }
 
