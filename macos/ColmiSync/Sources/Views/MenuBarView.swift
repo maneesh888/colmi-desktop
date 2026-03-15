@@ -45,15 +45,6 @@ struct MenuBarView: View {
                     }
                     .disabled(bleManager.isSyncing)
                     
-                    Button {
-                        Task {
-                            await bleManager.findRing()
-                        }
-                    } label: {
-                        Image(systemName: "bell.fill")
-                    }
-                    .buttonStyle(.plain)
-                    .help("Find Ring (vibrate)")
                 } else {
                     Button(bleManager.isScanning ? "Stop Scan" : "Scan") {
                         if bleManager.isScanning {
