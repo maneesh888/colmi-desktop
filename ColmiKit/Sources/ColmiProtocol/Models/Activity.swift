@@ -134,7 +134,9 @@ public final class ActivityParser: @unchecked Sendable {
     /// Create request packet for activity data
     /// - Parameter dayOffset: 0 = today, 1 = yesterday, etc.
     public static func requestPacket(dayOffset: Int = 0) -> Data {
-        let payload = Data([UInt8(truncatingIfNeeded: dayOffset)])
+        // Format: [dayOffset, 0x0F, 0x00, 0x5F, 0x01]
+        // The magic bytes 0x0F 0x00 0x5F 0x01 are required for proper response
+        let payload = Data([UInt8(truncatingIfNeeded: dayOffset), 0x0F, 0x00, 0x5F, 0x01])
         return ColmiPacket.make(command: .readActivity, payload: payload)
     }
 }

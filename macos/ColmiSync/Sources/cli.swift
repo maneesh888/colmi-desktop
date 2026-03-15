@@ -312,6 +312,10 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private func syncHistory(days: Int) {
         log("📅 Syncing \(days) days of history...")
         
+        // Try Big Data protocol first (0xBC)
+        log("🔬 Testing Big Data protocol...")
+        testBigData()
+        
         let calendar = Calendar.current
         let today = Date()
         let hrParser = HeartRateLogParser()
@@ -373,7 +377,30 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 log("   🚶 Steps: \(activity.totalSteps), Cal: \(activity.totalCalories)")
                 saveActivity(activity, dateStr: String(dateStr))
             } else {
-                log("   🚶 Steps: no data")
+                // Fallback: Try to sum any received activity packets from queue
+                var totalSteps = 0
+                var totalCal = 0
+                var totalDist = 0
+                var packetCount = 0
+                
+                responseQueueLock.lock()
+                for packet in responseQueue where packet.count == 16 && packet[0] == 0x43 && packet[1] != 0xF0 && packet[1] != 0xFF {
+                    let steps = Int(packet[9]) | (Int(packet[10]) << 8)
+                    let cal = Int(packet[7]) | (Int(packet[8]) << 8)
+                    let dist = Int(packet[11]) | (Int(packet[12]) << 8)
+                    totalSteps += steps
+                    totalCal += cal
+                    totalDist += dist
+                    packetCount += 1
+                }
+                responseQueue.removeAll()
+                responseQueueLock.unlock()
+                
+                if packetCount > 0 {
+                    log("   🚶 Steps: \(totalSteps), Cal: \(totalCal) (from \(packetCount) raw packets)")
+                } else {
+                    log("   🚶 Steps: no data")
+                }
             }
             
             // 3. SpO2 Log
@@ -463,20 +490,93 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
     
+    private func testBigData() {
+        // Big Data types to test: format BC [type] [day] 00 FF 00 FF
+        let types: [(UInt8, String)] = [
+            (0x27, "Sleep"),
+            (0x2A, "SpO2"),
+        ]
+        
+        for (typeCode, name) in types {
+            var packet = Data(count: 16)
+            packet[0] = 0xBC  // Big Data command
+            packet[1] = typeCode
+            packet[2] = 0x00  // Day 0 = today
+            packet[3] = 0x00
+            packet[4] = 0xFF
+            packet[5] = 0x00
+            packet[6] = 0xFF
+            // Calculate checksum
+            var sum: UInt8 = 0
+            for i in 0..<15 { sum = sum &+ packet[i] }
+            packet[15] = sum
+            
+            log("  Testing \(name) (BC \(String(format: "%02X", typeCode)))...")
+            _ = sendPacket(packet, waitTime: 0.5)
+            
+            // Collect responses for 3 seconds
+            let deadline = Date(timeIntervalSinceNow: 3)
+            var responseCount = 0
+            while Date() < deadline {
+                if let response = waitForResponse(timeout: 0.5) {
+                    if response[0] == 0xBC {
+                        responseCount += 1
+                        if responseCount == 1 {
+                            let len = Int(response[2]) | (Int(response[3]) << 8)
+                            log("    ✅ Got response! Length: \(len) bytes")
+                        }
+                    }
+                }
+            }
+            if responseCount == 0 {
+                log("    ❌ No response")
+            } else {
+                log("    Got \(responseCount) packets")
+            }
+        }
+    }
+    
+    // Response queue for multi-packet responses
+    private var responseQueue: [Data] = []
+    private let responseQueueLock = NSLock()
+    
     private func waitForResponse(timeout: TimeInterval) -> Data? {
+        // First check if there's already something in the queue
+        responseQueueLock.lock()
+        if !responseQueue.isEmpty {
+            let data = responseQueue.removeFirst()
+            responseQueueLock.unlock()
+            return data
+        }
+        responseQueueLock.unlock()
+        
         guard let rx = rxCharacteristic else { return nil }
         
         var responseData: Data?
         let deadline = Date(timeIntervalSinceNow: timeout)
         
-        pendingResponse = { data in
+        pendingResponse = { [self] data in
+            // Add to queue instead of overwriting
+            guard let data = data else { return }
+            self.responseQueueLock.lock()
+            self.responseQueue.append(data)
+            self.responseQueueLock.unlock()
             responseData = data
         }
         
         peripheral?.setNotifyValue(true, for: rx)
         
-        while Date() < deadline && responseData == nil {
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+        while Date() < deadline {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+            
+            // Check if we have a response in queue
+            responseQueueLock.lock()
+            if !responseQueue.isEmpty {
+                let data = responseQueue.removeFirst()
+                responseQueueLock.unlock()
+                return data
+            }
+            responseQueueLock.unlock()
         }
         
         return responseData
@@ -637,6 +737,9 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             }
         }
         
+        // Debug: print sent packet
+        let hex = packet.map { String(format: "%02X", $0) }.joined(separator: " ")
+        print("📤 TX: \(hex)")
         peripheral?.writeValue(packet, for: rx, type: .withoutResponse)
         RunLoop.current.run(until: Date(timeIntervalSinceNow: waitTime))
         
@@ -845,6 +948,9 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     
     nonisolated func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard let data = characteristic.value else { return }
+        // Debug: print received packet
+        let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
+        print("📥 RX: \(hex)")
         Task { @MainActor in
             self.pendingResponse?(data)
         }

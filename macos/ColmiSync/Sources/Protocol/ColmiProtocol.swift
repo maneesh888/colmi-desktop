@@ -345,8 +345,11 @@ class ActivityParser {
     func parse(_ data: Data) -> DailyActivity? {
         guard data.count == 16,
               ColmiPacket.commandType(data) == .readActivity else {
+            print("  [Activity] Rejected packet: count=\(data.count), cmd=\(data.first ?? 0)")
             return nil
         }
+        
+        print("  [Activity] Parsing packet: index=\(index), byte1=\(String(format: "0x%02X", data[1]))")
         
         // No data response
         if index == 0 && data[1] == 0xFF {
@@ -363,13 +366,15 @@ class ActivityParser {
             return nil
         }
         
-        // Data packet - parse BCD-encoded date and values
+        // Data packet - parse values
+        // Note: R09 may use different date format, so we use today's date as fallback
+        let timeIndex = Int(data[4])
+        
+        // Try to parse BCD date, but don't fail if it doesn't work
         let year = bcdToDecimal(data[1]) + 2000
         let month = bcdToDecimal(data[2])
         let day = bcdToDecimal(data[3])
-        let timeIndex = Int(data[4])
         
-        // Create timestamp from date + time index
         var dateComponents = DateComponents()
         dateComponents.year = year
         dateComponents.month = month
@@ -377,9 +382,8 @@ class ActivityParser {
         dateComponents.hour = timeIndex / 4
         dateComponents.minute = (timeIndex % 4) * 15
         
-        guard let timestamp = Calendar.current.date(from: dateComponents) else {
-            return nil
-        }
+        // Use parsed date if valid, otherwise use today
+        let timestamp = Calendar.current.date(from: dateComponents) ?? Date()
         
         // Parse values (little-endian 16-bit)
         var calories = Int(data[7]) | (Int(data[8]) << 8)
@@ -397,9 +401,11 @@ class ActivityParser {
         )
         details.append(detail)
         index += 1
+        print("  [Activity] Parsed: steps=\(steps), cal=\(calories), dist=\(distance), total details=\(details.count)")
         
         // Check if this is the last packet (byte 5 == byte 6 - 1)
         if data[5] == data[6] - 1 {
+            print("  [Activity] COMPLETE! Returning \(details.count) details")
             let date = Calendar.current.startOfDay(for: timestamp)
             let result = DailyActivity(date: date, details: details)
             reset()
