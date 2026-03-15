@@ -41,10 +41,14 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     func run() {
         log("🔄 ColmiSync CLI - Starting...")
         
-        // Wait for Bluetooth to be ready
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 2))
+        // Wait for Bluetooth to be ready (up to 10 seconds for daemon mode)
+        var btWaitTime = 0
+        while centralManager.state != .poweredOn && btWaitTime < 10 {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 1))
+            btWaitTime += 1
+        }
         
-        log("🔵 Bluetooth state: \(centralManager.state.rawValue) (4=poweredOn)")
+        log("🔵 Bluetooth state: \(centralManager.state.rawValue) (waited \(btWaitTime)s)")
         
         guard centralManager.state == .poweredOn else {
             log("❌ Bluetooth not available (state=\(centralManager.state.rawValue))")
