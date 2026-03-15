@@ -209,44 +209,93 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         
         let calendar = Calendar.current
         let today = Date()
-        let parser = HeartRateLogParser()
+        let hrParser = HeartRateLogParser()
+        let activityParser = ActivityParser()
+        let spo2Parser = SpO2LogParser()
         
         for dayOffset in 0..<days {
             guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
             let dateStr = ISO8601DateFormatter().string(from: date).prefix(10)
             
-            // Request HR log for this day
-            let requestPacket = HeartRateLogParser.requestPacket(for: date)
-            parser.reset()
+            log("📊 Day \(dateStr):")
             
-            log("📊 Fetching HR log for \(dateStr)...")
+            // 1. HR Log
+            let hrRequestPacket = HeartRateLogParser.requestPacket(for: date)
+            hrParser.reset()
             
-            // Send request and collect multi-packet response
             var hrLog: HeartRateLog?
-            let deadline = Date(timeIntervalSinceNow: 10) // 10 second timeout per day
-            
-            _ = sendPacket(requestPacket, waitTime: 0.5)
+            var deadline = Date(timeIntervalSinceNow: 5)
+            _ = sendPacket(hrRequestPacket, waitTime: 0.5)
             
             while Date() < deadline && hrLog == nil {
-                if let response = waitForResponse(timeout: 2) {
-                    if let result = parser.parse(response) {
+                if let response = waitForResponse(timeout: 1) {
+                    if let result = hrParser.parse(response) {
                         hrLog = result
                     }
                 } else {
-                    break  // No more data
+                    break
                 }
             }
             
             if let hrLog = hrLog {
-                let validCount = hrLog.validReadings.count
-                log("   ✅ \(validCount) readings")
+                log("   ❤️ HR: \(hrLog.validReadings.count) readings")
                 saveHRLog(hrLog, dateStr: String(dateStr))
             } else {
-                log("   ⚠️ No data")
+                log("   ❤️ HR: no data")
+            }
+            
+            // 2. Activity/Steps
+            let activityPacket = ActivityParser.requestPacket(dayOffset: dayOffset)
+            activityParser.reset()
+            
+            var activity: DailyActivity?
+            deadline = Date(timeIntervalSinceNow: 5)
+            _ = sendPacket(activityPacket, waitTime: 0.5)
+            
+            while Date() < deadline && activity == nil {
+                if let response = waitForResponse(timeout: 1) {
+                    if let result = activityParser.parse(response) {
+                        activity = result
+                    }
+                } else {
+                    break
+                }
+            }
+            
+            if let activity = activity {
+                log("   🚶 Steps: \(activity.totalSteps), Cal: \(activity.totalCalories)")
+                saveActivity(activity, dateStr: String(dateStr))
+            } else {
+                log("   🚶 Steps: no data")
+            }
+            
+            // 3. SpO2 Log
+            let spo2Packet = SpO2LogParser.requestPacket(for: date)
+            spo2Parser.reset()
+            
+            var spo2Log: SpO2Log?
+            deadline = Date(timeIntervalSinceNow: 5)
+            _ = sendPacket(spo2Packet, waitTime: 0.5)
+            
+            while Date() < deadline && spo2Log == nil {
+                if let response = waitForResponse(timeout: 1) {
+                    if let result = spo2Parser.parse(response) {
+                        spo2Log = result
+                    }
+                } else {
+                    break
+                }
+            }
+            
+            if let spo2Log = spo2Log {
+                log("   🫁 SpO2: \(spo2Log.validReadings.count) readings")
+                saveSpO2Log(spo2Log, dateStr: String(dateStr))
+            } else {
+                log("   🫁 SpO2: no data")
             }
             
             // Small delay between days
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.3))
         }
         
         log("📅 History sync complete!")
@@ -282,6 +331,53 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         
         let file = dir.appendingPathComponent("hr-\(dateStr).json")
+        
+        let data: [String: Any] = [
+            "date": dateStr,
+            "readings": log.readings,
+            "validCount": log.validReadings.count
+        ]
+        
+        if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]) {
+            try? jsonData.write(to: file)
+        }
+    }
+    
+    private func saveActivity(_ activity: DailyActivity, dateStr: String) {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("clawd/health")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        
+        let file = dir.appendingPathComponent("activity-\(dateStr).json")
+        
+        let details = activity.details.map { detail -> [String: Any] in
+            return [
+                "timestamp": ISO8601DateFormatter().string(from: detail.timestamp),
+                "steps": detail.steps,
+                "calories": detail.calories,
+                "distance": detail.distance
+            ]
+        }
+        
+        let data: [String: Any] = [
+            "date": dateStr,
+            "totalSteps": activity.totalSteps,
+            "totalCalories": activity.totalCalories,
+            "totalDistance": activity.totalDistance,
+            "details": details
+        ]
+        
+        if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]) {
+            try? jsonData.write(to: file)
+        }
+    }
+    
+    private func saveSpO2Log(_ log: SpO2Log, dateStr: String) {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("clawd/health")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        
+        let file = dir.appendingPathComponent("spo2-\(dateStr).json")
         
         let data: [String: Any] = [
             "date": dateStr,
