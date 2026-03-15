@@ -20,7 +20,10 @@ enum ColmiCommand: UInt8 {
     case readHeartRate = 0x15       // 21 - Daily heart rate logs
     case hrLogSettings = 0x16       // 22 - HR log settings (continuous monitoring)
     case readSpO2Log = 0x2C         // 44 - Daily SpO2 logs
-    case readStress = 0x37          // 55 - Stress data
+    case stressSettings = 0x36      // 54 - Stress monitoring settings
+    case readStress = 0x37          // 55 - Stress data (30 min intervals)
+    case hrvSettings = 0x38         // 56 - HRV monitoring settings
+    case readHRV = 0x39             // 57 - HRV data
     case readActivity = 0x43        // 67 - Steps/activity
     case findDevice = 0x50          // 80 - Make ring vibrate
     case realTimeHR = 0x69          // 105 - Real-time heart rate
@@ -595,5 +598,174 @@ class SpO2LogParser {
         }
         
         return ColmiPacket.make(command: .readSpO2Log, payload: payload)
+    }
+}
+
+// MARK: - Stress Log
+
+struct StressLog {
+    let date: Date
+    let readings: [Int]  // 48 readings (every 30 min for 24 hours)
+    
+    var validReadings: [Int] {
+        readings.filter { $0 > 0 && $0 <= 100 }
+    }
+    
+    var readingsWithTimes: [(time: Date, stress: Int)] {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        
+        return readings.enumerated().compactMap { index, stress in
+            guard stress > 0 && stress <= 100 else { return nil }
+            let time = calendar.date(byAdding: .minute, value: index * 30, to: startOfDay)!
+            return (time, stress)
+        }
+    }
+}
+
+class StressLogParser {
+    private var rawData: [Int] = []
+    private var expectedPackets = 0
+    private var receivedPackets = 0
+    
+    func reset() {
+        rawData = []
+        expectedPackets = 0
+        receivedPackets = 0
+    }
+    
+    /// Parse a packet. Returns StressLog when complete, nil when more packets expected.
+    func parse(_ data: Data) -> StressLog? {
+        guard data.count == 16,
+              ColmiPacket.commandType(data) == .readStress else {
+            return nil
+        }
+        
+        let packetNr = data[1] & 0xff
+        
+        // Error/empty response
+        if packetNr == 0xff {
+            reset()
+            return nil
+        }
+        
+        // Initial response (packet 0)
+        if packetNr == 0 {
+            rawData = Array(repeating: 0, count: 48)  // 48 readings (30 min intervals)
+            receivedPackets = 1
+            return nil
+        }
+        
+        // Data packets
+        // Packet 1: bytes 3-14 = 12 values (first 6 hours)
+        // Packet 2+: bytes 2-14 = 13 values
+        let pktNr = Int(packetNr)
+        let startByte = pktNr == 1 ? 3 : 2
+        var dataIndex = pktNr == 1 ? 0 : 12 + (pktNr - 2) * 13
+        
+        for i in startByte..<15 {
+            if dataIndex < rawData.count {
+                rawData[dataIndex] = Int(data[i])
+                dataIndex += 1
+            }
+        }
+        receivedPackets += 1
+        
+        // Check if we have all 48 values (4 packets total: 0, 1, 2, 3)
+        // Packet 1: 12 values, Packet 2: 13 values, Packet 3: 13 values, Packet 4: 10 values
+        if pktNr >= 3 {
+            let result = StressLog(date: Date(), readings: rawData)
+            reset()
+            return result
+        }
+        
+        return nil
+    }
+    
+    static var requestPacket: Data {
+        ColmiPacket.make(command: .readStress)
+    }
+}
+
+// MARK: - HRV Log
+
+struct HRVLog {
+    let date: Date
+    let readings: [Int]  // HRV values in ms
+    
+    var validReadings: [Int] {
+        readings.filter { $0 > 0 }
+    }
+}
+
+class HRVLogParser {
+    private var rawData: [Int] = []
+    private var timestamp: Date?
+    private var expectedPackets = 0
+    private var receivedPackets = 0
+    
+    func reset() {
+        rawData = []
+        timestamp = nil
+        expectedPackets = 0
+        receivedPackets = 0
+    }
+    
+    /// Parse a packet. Returns HRVLog when complete, nil when more packets expected.
+    func parse(_ data: Data) -> HRVLog? {
+        guard data.count == 16,
+              ColmiPacket.commandType(data) == .readHRV else {
+            return nil
+        }
+        
+        let subType = data[1]
+        
+        // Error response
+        if subType == 0xff {
+            reset()
+            return nil
+        }
+        
+        // Header packet
+        if subType == 0 {
+            expectedPackets = Int(data[2])
+            rawData = []
+            receivedPackets = 1
+            return nil
+        }
+        
+        // First data packet has timestamp
+        if subType == 1 {
+            let ts = data[2..<6].withUnsafeBytes { $0.load(as: UInt32.self) }
+            timestamp = Date(timeIntervalSince1970: TimeInterval(ts))
+            
+            // HRV values are 2 bytes each (little endian)
+            for i in stride(from: 6, to: 14, by: 2) {
+                let hrv = Int(data[i]) | (Int(data[i+1]) << 8)
+                rawData.append(hrv)
+            }
+            receivedPackets += 1
+            return nil
+        }
+        
+        // Subsequent data packets - HRV values are 2 bytes each
+        for i in stride(from: 2, to: 14, by: 2) {
+            let hrv = Int(data[i]) | (Int(data[i+1]) << 8)
+            rawData.append(hrv)
+        }
+        receivedPackets += 1
+        
+        // Check if complete
+        if expectedPackets > 0, subType == UInt8(truncatingIfNeeded: expectedPackets - 1), let ts = timestamp {
+            let result = HRVLog(date: ts, readings: rawData)
+            reset()
+            return result
+        }
+        
+        return nil
+    }
+    
+    static func requestPacket(dayOffset: Int = 0) -> Data {
+        ColmiPacket.make(command: .readHRV, payload: Data([UInt8(dayOffset)]))
     }
 }

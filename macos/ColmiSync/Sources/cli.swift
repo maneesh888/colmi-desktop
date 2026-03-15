@@ -195,12 +195,41 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         
         if let response = sendPacket(packet, waitTime: 2, expectedCmd: 0x16) {
             if response[2] == 0x01 {
-                log("   ✅ Continuous monitoring enabled")
+                log("   ✅ HR monitoring enabled")
             } else {
-                log("   ⚠️ Monitoring disabled in response")
+                log("   ⚠️ HR monitoring disabled in response")
             }
         } else {
-            log("   ⚠️ No response to settings command")
+            log("   ⚠️ No response to HR settings command")
+        }
+        
+        // Enable stress monitoring (0x36)
+        enableHealthFeature(cmd: 0x36, name: "Stress")
+        
+        // Enable HRV monitoring (0x38)
+        enableHealthFeature(cmd: 0x38, name: "HRV")
+    }
+    
+    private func enableHealthFeature(cmd: UInt8, name: String) {
+        var packet = Data(count: 16)
+        packet[0] = cmd
+        packet[1] = 0x02  // Write subtype
+        packet[2] = 0x01  // Enabled
+        
+        var checksum: UInt8 = 0
+        for i in 0..<15 {
+            checksum = checksum &+ packet[i]
+        }
+        packet[15] = checksum
+        
+        if let response = sendPacket(packet, waitTime: 2, expectedCmd: cmd) {
+            if response[2] == 0x01 {
+                log("   ✅ \(name) monitoring enabled")
+            } else {
+                log("   ⚠️ \(name) monitoring disabled in response")
+            }
+        } else {
+            log("   ⚠️ No response to \(name) settings")
         }
     }
     
@@ -212,6 +241,8 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         let hrParser = HeartRateLogParser()
         let activityParser = ActivityParser()
         let spo2Parser = SpO2LogParser()
+        let stressParser = StressLogParser()
+        let hrvParser = HRVLogParser()
         
         for dayOffset in 0..<days {
             guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
@@ -292,6 +323,58 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 saveSpO2Log(spo2Log, dateStr: String(dateStr))
             } else {
                 log("   🫁 SpO2: no data")
+            }
+            
+            // 4. Stress Log (only for today - uses different request format)
+            if dayOffset == 0 {
+                let stressPacket = StressLogParser.requestPacket
+                stressParser.reset()
+                
+                var stressLog: StressLog?
+                deadline = Date(timeIntervalSinceNow: 5)
+                _ = sendPacket(stressPacket, waitTime: 0.5)
+                
+                while Date() < deadline && stressLog == nil {
+                    if let response = waitForResponse(timeout: 1) {
+                        if let result = stressParser.parse(response) {
+                            stressLog = result
+                        }
+                    } else {
+                        break
+                    }
+                }
+                
+                if let stressLog = stressLog {
+                    log("   😰 Stress: \(stressLog.validReadings.count) readings")
+                    saveStressLog(stressLog, dateStr: String(dateStr))
+                } else {
+                    log("   😰 Stress: no data")
+                }
+                
+                // 5. HRV Log
+                let hrvPacket = HRVLogParser.requestPacket(dayOffset: dayOffset)
+                hrvParser.reset()
+                
+                var hrvLog: HRVLog?
+                deadline = Date(timeIntervalSinceNow: 5)
+                _ = sendPacket(hrvPacket, waitTime: 0.5)
+                
+                while Date() < deadline && hrvLog == nil {
+                    if let response = waitForResponse(timeout: 1) {
+                        if let result = hrvParser.parse(response) {
+                            hrvLog = result
+                        }
+                    } else {
+                        break
+                    }
+                }
+                
+                if let hrvLog = hrvLog {
+                    log("   💓 HRV: \(hrvLog.validReadings.count) readings")
+                    saveHRVLog(hrvLog, dateStr: String(dateStr))
+                } else {
+                    log("   💓 HRV: no data")
+                }
             }
             
             // Small delay between days
@@ -378,6 +461,42 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         
         let file = dir.appendingPathComponent("spo2-\(dateStr).json")
+        
+        let data: [String: Any] = [
+            "date": dateStr,
+            "readings": log.readings,
+            "validCount": log.validReadings.count
+        ]
+        
+        if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]) {
+            try? jsonData.write(to: file)
+        }
+    }
+    
+    private func saveStressLog(_ log: StressLog, dateStr: String) {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("clawd/health")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        
+        let file = dir.appendingPathComponent("stress-\(dateStr).json")
+        
+        let data: [String: Any] = [
+            "date": dateStr,
+            "readings": log.readings,
+            "validCount": log.validReadings.count
+        ]
+        
+        if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]) {
+            try? jsonData.write(to: file)
+        }
+    }
+    
+    private func saveHRVLog(_ log: HRVLog, dateStr: String) {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("clawd/health")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        
+        let file = dir.appendingPathComponent("hrv-\(dateStr).json")
         
         let data: [String: Any] = [
             "date": dateStr,
