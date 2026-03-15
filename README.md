@@ -42,7 +42,7 @@ No accounts. No cloud. No subscription. Just your data, under your control.
 
 Any Colmi ring using the **QRing app** protocol:
 
-- ✅ Colmi R02
+- ✅ Colmi R09
 - ✅ Colmi R06  
 - ✅ Colmi R09 *(actively tested)*
 - ✅ Colmi R10
