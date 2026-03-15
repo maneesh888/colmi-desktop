@@ -242,7 +242,7 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
     
     /// Parse CLI arguments
-    static func parseArgs(_ args: [String]) -> (scanTime: Int, retries: Int) {
+    nonisolated static func parseArgs(_ args: [String]) -> (scanTime: Int, retries: Int) {
         var scanTime = 30
         var retries = 3
         

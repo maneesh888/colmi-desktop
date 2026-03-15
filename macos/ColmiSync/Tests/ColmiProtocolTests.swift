@@ -301,4 +301,95 @@ struct ColmiProtocolTests {
         
         #expect(HRLogSettings.disabled.enabled == false)
     }
+    
+    // MARK: - CLI Tests
+    
+    @Test("CLI argument parsing - defaults")
+    func testCLIArgsDefaults() {
+        let args = CLISync.parseArgs([])
+        #expect(args.scanTime == 30)
+        #expect(args.retries == 3)
+    }
+    
+    @Test("CLI argument parsing - custom values")
+    func testCLIArgsCustom() {
+        let args = CLISync.parseArgs(["--scan-time", "60", "--retries", "5"])
+        #expect(args.scanTime == 60)
+        #expect(args.retries == 5)
+    }
+    
+    @Test("CLI argument parsing - partial")
+    func testCLIArgsPartial() {
+        let args = CLISync.parseArgs(["--scan-time", "45"])
+        #expect(args.scanTime == 45)
+        #expect(args.retries == 3)  // Default
+    }
+    
+    @Test("CLI argument parsing - invalid falls back to default")
+    func testCLIArgsInvalid() {
+        let args = CLISync.parseArgs(["--scan-time", "abc"])
+        #expect(args.scanTime == 30)  // Falls back to default
+    }
+    
+    // MARK: - Data Extension Tests
+    
+    @Test("Data hex string extension")
+    func testDataHexString() {
+        let data = Data([0x03, 0x40, 0x00, 0xFF])
+        let hex = data.hexString
+        #expect(hex == "03 40 00 ff")
+    }
+    
+    // MARK: - HR Log Parser Tests
+    
+    @Test("HR log parser - error response")
+    func testHRLogParserError() {
+        let parser = HeartRateLogParser()
+        
+        var packet = Data(count: 16)
+        packet[0] = ColmiCommand.readHeartRate.rawValue
+        packet[1] = 0xFF  // Error indicator
+        packet[15] = ColmiPacket.checksum(packet)
+        
+        let result = parser.parse(packet)
+        #expect(result == nil)
+    }
+    
+    @Test("HR log parser - header packet")
+    func testHRLogParserHeader() {
+        let parser = HeartRateLogParser()
+        
+        var packet = Data(count: 16)
+        packet[0] = ColmiCommand.readHeartRate.rawValue
+        packet[1] = 0x00  // Header sub-type
+        packet[2] = 5     // Number of packets
+        packet[3] = 5     // 5-minute interval
+        packet[15] = ColmiPacket.checksum(packet)
+        
+        // Header returns nil (waiting for more)
+        let result = parser.parse(packet)
+        #expect(result == nil)
+    }
+    
+    // MARK: - Find Device Test
+    
+    @Test("Find device packet")
+    func testFindDevicePacket() {
+        let packet = ColmiPacket.findDevicePacket
+        #expect(packet[0] == ColmiCommand.findDevice.rawValue)
+        #expect(ColmiPacket.isValid(packet))
+    }
+    
+    // MARK: - HeartRateLog Tests
+    
+    @Test("HeartRateLog valid readings filter")
+    func testHeartRateLogValidReadings() {
+        let now = Date()
+        let readings = [0, 72, 0, 75, 68, 0]  // Mix of valid and zero
+        let log = HeartRateLog(date: now, readings: readings)
+        
+        let valid = log.validReadings
+        #expect(valid.count == 3)
+        #expect(valid.allSatisfy { $0.bpm > 0 })
+    }
 }

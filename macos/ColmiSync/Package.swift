@@ -14,7 +14,8 @@ let package = Package(
         .executableTarget(
             name: "ColmiSync",
             dependencies: [],
-            path: "Sources"
+            path: "Sources",
+            exclude: ["Info.plist"]
         ),
         .testTarget(
             name: "ColmiSyncTests",
