@@ -27,6 +27,10 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var maxRetries: Int = 3
     var historyDays: Int = 0  // 0 = no history sync
     var enableMonitoringInterval: Int = 0  // 0 = don't change, >0 = enable with interval in minutes
+    var minRssi: Int = -100  // Minimum RSSI to attempt connection (-100 = any)
+    var scanOnly: Bool = false  // Just scan for ring, don't sync
+    
+    private var lastSeenRssi: Int = -100
     
     override init() {
         super.init()
@@ -43,6 +47,34 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard centralManager.state == .poweredOn else {
             log("❌ Bluetooth not available")
             return
+        }
+        
+        // Scan-only mode: just check if ring is nearby with good signal
+        if scanOnly {
+            log("📡 Scan-only mode - checking for ring...")
+            let rssi = scanForRing()
+            if rssi > -100 {
+                log("📱 Ring found! RSSI: \(rssi)")
+                if rssi >= minRssi {
+                    log("✅ Signal good enough for sync (>= \(minRssi))")
+                } else {
+                    log("⚠️ Signal too weak for sync (need >= \(minRssi))")
+                }
+            } else {
+                log("❌ Ring not found")
+            }
+            return
+        }
+        
+        // Check signal strength first if min-rssi is set
+        if minRssi > -100 {
+            log("📡 Checking signal strength (need >= \(minRssi))...")
+            let rssi = scanForRing()
+            if rssi < minRssi {
+                log("⚠️ Ring signal too weak: \(rssi) (need >= \(minRssi)). Skipping sync.")
+                return
+            }
+            log("✅ Signal OK: \(rssi)")
         }
         
         var connected = false
@@ -104,6 +136,27 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         } else {
             log("❌ Could not find/connect to ring after \(maxRetries) attempts")
         }
+    }
+    
+    /// Quick scan to find ring and get RSSI (returns -100 if not found)
+    private func scanForRing() -> Int {
+        lastSeenRssi = -100
+        
+        centralManager.scanForPeripherals(
+            withServices: nil,
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+        )
+        
+        let deadline = Date(timeIntervalSinceNow: min(scanTimeout, 15))
+        while Date() < deadline {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
+            if lastSeenRssi > -100 {
+                break  // Found it
+            }
+        }
+        
+        centralManager.stopScan()
+        return lastSeenRssi
     }
     
     private func scanAndConnect() -> Bool {
@@ -586,11 +639,13 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
     
     /// Parse CLI arguments
-    nonisolated static func parseArgs(_ args: [String]) -> (scanTime: Int, retries: Int, historyDays: Int, enableMonitoring: Int) {
+    nonisolated static func parseArgs(_ args: [String]) -> (scanTime: Int, retries: Int, historyDays: Int, enableMonitoring: Int, minRssi: Int, scanOnly: Bool) {
         var scanTime = 30
         var retries = 3
         var historyDays = 0  // 0 = no history sync
         var enableMonitoring = 0  // 0 = don't change, >0 = enable with interval
+        var minRssi = -100  // minimum RSSI to attempt connection (-100 = any signal)
+        var scanOnly = false  // just scan, don't sync
         
         var i = 0
         while i < args.count {
@@ -618,12 +673,18 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                     enableMonitoring = 5  // default 5 minutes
                     i += 1
                 }
+            } else if args[i] == "--min-rssi" && i + 1 < args.count {
+                minRssi = Int(args[i + 1]) ?? -75
+                i += 2
+            } else if args[i] == "--scan-only" {
+                scanOnly = true
+                i += 1
             } else {
                 i += 1
             }
         }
         
-        return (scanTime, retries, historyDays, enableMonitoring)
+        return (scanTime, retries, historyDays, enableMonitoring, minRssi, scanOnly)
     }
     
     private func saveLatest(heartRate: Int? = nil, spO2: Int? = nil, battery: Int? = nil) {
@@ -667,6 +728,7 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     
     nonisolated func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? ""
+        let rssiValue = RSSI.intValue
         
         // Prioritize our saved ring if we have one
         let isSavedRing = Task { @MainActor in
@@ -677,7 +739,16 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             let saved = await isSavedRing.value
             
             if saved {
-                log("📱 Found our ring: \(name) (RSSI: \(RSSI))")
+                // Save RSSI for signal strength checking
+                self.lastSeenRssi = rssiValue
+                
+                // In scan-only mode, just record RSSI and stop
+                if self.scanOnly {
+                    central.stopScan()
+                    return
+                }
+                
+                log("📱 Found our ring: \(name) (RSSI: \(rssiValue))")
                 central.stopScan()
                 self.peripheral = peripheral
                 peripheral.delegate = self
@@ -685,7 +756,14 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             } else if name.hasPrefix("R0") || name.lowercased().contains("colmi") {
                 // Only connect to other rings if we don't have a saved one
                 if self.savedRingId == nil && self.peripheral == nil {
-                    log("📱 Found ring: \(name) (RSSI: \(RSSI))")
+                    self.lastSeenRssi = rssiValue
+                    
+                    if self.scanOnly {
+                        central.stopScan()
+                        return
+                    }
+                    
+                    log("📱 Found ring: \(name) (RSSI: \(rssiValue))")
                     central.stopScan()
                     self.peripheral = peripheral
                     peripheral.delegate = self

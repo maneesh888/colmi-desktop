@@ -6,13 +6,15 @@ struct ColmiSyncApp: App {
     
     init() {
         // Check for CLI mode
-        if CommandLine.arguments.contains("--cli") || CommandLine.arguments.contains("--sync") {
+        if CommandLine.arguments.contains("--cli") || CommandLine.arguments.contains("--sync") || CommandLine.arguments.contains("--scan-only") {
             let args = CLISync.parseArgs(CommandLine.arguments)
             let cli = CLISync()
             cli.scanTimeout = TimeInterval(args.scanTime)
             cli.maxRetries = args.retries
             cli.historyDays = args.historyDays
             cli.enableMonitoringInterval = args.enableMonitoring
+            cli.minRssi = args.minRssi
+            cli.scanOnly = args.scanOnly
             cli.run()
             exit(0)
         }

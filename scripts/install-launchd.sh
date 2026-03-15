@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install ColmiSync as a background service using launchd
-# Runs sync every hour to keep health data updated
+# Scans every 10 minutes, only syncs if signal is good (RSSI >= -75)
 
 set -e
 
@@ -33,14 +33,18 @@ cat > "$PLIST_PATH" << EOF
         <string>${BINARY_PATH}</string>
         <string>--cli</string>
         <string>--scan-time</string>
-        <string>30</string>
+        <string>15</string>
         <string>--retries</string>
-        <string>3</string>
+        <string>2</string>
+        <string>--min-rssi</string>
+        <string>-75</string>
+        <string>--history</string>
+        <string>1</string>
     </array>
     
-    <!-- Run every hour -->
+    <!-- Run every 10 minutes (600 seconds) -->
     <key>StartInterval</key>
-    <integer>3600</integer>
+    <integer>600</integer>
     
     <!-- Also run at load -->
     <key>RunAtLoad</key>
@@ -50,13 +54,6 @@ cat > "$PLIST_PATH" << EOF
     <string>${LOG_PATH}</string>
     <key>StandardErrorPath</key>
     <string>${LOG_PATH}</string>
-    
-    <!-- Keep trying if it fails -->
-    <key>KeepAlive</key>
-    <dict>
-        <key>SuccessfulExit</key>
-        <false/>
-    </dict>
     
     <!-- Timeout after 2 minutes -->
     <key>TimeOut</key>
@@ -75,7 +72,13 @@ echo "✅ Created plist at: $PLIST_PATH"
 launchctl unload "$PLIST_PATH" 2>/dev/null || true
 launchctl load "$PLIST_PATH"
 
-echo "✅ Service loaded and will run every hour"
+echo "✅ Service loaded and will run every 10 minutes"
+echo ""
+echo "Configuration:"
+echo "  - Scan timeout: 15 seconds"
+echo "  - Min RSSI: -75 (only syncs when close)"
+echo "  - History: 1 day"
+echo "  - Retries: 2"
 echo ""
 echo "Commands:"
 echo "  Run now:     launchctl start $PLIST_NAME"
