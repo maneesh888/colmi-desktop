@@ -725,9 +725,14 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard let rx = rxCharacteristic else { return nil }
         
         var response: Data?
-        pendingResponse = { data in
+        pendingResponse = { [self] data in
             guard let data = data else { return }
-            // If we expect a specific command response, only capture that one
+            // Always add to queue for multi-packet responses
+            self.responseQueueLock.lock()
+            self.responseQueue.append(data)
+            self.responseQueueLock.unlock()
+            
+            // If we expect a specific command response, capture it
             if let expected = expectedCmd {
                 if data[0] == expected && response == nil {
                     response = data
