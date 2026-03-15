@@ -147,6 +147,11 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         
         if connected && rxCharacteristic != nil {
             log("✅ Connected! Syncing...")
+            
+            // Sync time first (important for step tracking)
+            log("⏰ Syncing time...")
+            _ = sendPacket(ColmiPacket.setTimePacket(), waitTime: 0.5)
+            
             syncData()
             if historyDays > 0 {
                 syncHistory(days: historyDays)

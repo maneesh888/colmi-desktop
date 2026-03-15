@@ -6,11 +6,22 @@ struct SettingsView: View {
     @AppStorage("syncInterval") private var syncInterval = 30
     @AppStorage("savedRingAddress") private var savedRingAddress = ""
     
+    @State private var hrInterval: Int = 10
+    @State private var hrEnabled: Bool = true
+    @State private var stressEnabled: Bool = true
+    @State private var hrvEnabled: Bool = true
+    @State private var isApplying: Bool = false
+    
     var body: some View {
         TabView {
             generalSettings
                 .tabItem {
                     Label("General", systemImage: "gear")
+                }
+            
+            monitoringSettings
+                .tabItem {
+                    Label("Monitoring", systemImage: "waveform.path.ecg")
                 }
             
             connectionSettings
@@ -23,7 +34,76 @@ struct SettingsView: View {
                     Label("Data", systemImage: "externaldrive")
                 }
         }
-        .frame(width: 450, height: 300)
+        .frame(width: 450, height: 350)
+    }
+    
+    private var monitoringSettings: some View {
+        Form {
+            Section("Continuous Heart Rate") {
+                Toggle("Enable HR Monitoring", isOn: $hrEnabled)
+                
+                if hrEnabled {
+                    Picker("Measurement Interval", selection: $hrInterval) {
+                        Text("Every 5 min (more data, less battery)").tag(5)
+                        Text("Every 10 min (recommended)").tag(10)
+                        Text("Every 15 min").tag(15)
+                        Text("Every 30 min").tag(30)
+                        Text("Every 60 min (less data, more battery)").tag(60)
+                    }
+                }
+            }
+            
+            Section("Other Monitoring") {
+                Toggle("Stress Monitoring", isOn: $stressEnabled)
+                Toggle("HRV Monitoring", isOn: $hrvEnabled)
+            }
+            
+            Section {
+                HStack {
+                    Button("Apply to Ring") {
+                        applyMonitoringSettings()
+                    }
+                    .disabled(!bleManager.isConnected || isApplying)
+                    
+                    if isApplying {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    }
+                }
+                
+                if !bleManager.isConnected {
+                    Text("Connect to ring to apply settings")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .onAppear {
+            // Load current settings from ring if connected
+            if let settings = bleManager.hrLogSettings {
+                hrEnabled = settings.enabled
+                hrInterval = settings.intervalMinutes
+            }
+        }
+    }
+    
+    private func applyMonitoringSettings() {
+        isApplying = true
+        Task {
+            do {
+                if hrEnabled {
+                    try await bleManager.enableContinuousMonitoring(intervalMinutes: hrInterval)
+                } else {
+                    try await bleManager.disableContinuousMonitoring()
+                }
+                // TODO: Apply stress/HRV settings when API available
+            } catch {
+                print("Failed to apply settings: \(error)")
+            }
+            isApplying = false
+        }
     }
     
     private var generalSettings: some View {

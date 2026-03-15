@@ -1,0 +1,25 @@
+name: ColmiSyncApp
+options:
+  bundleIdPrefix: com.clawd
+  deploymentTarget:
+    macOS: "13.0"
+settings:
+  base:
+    PRODUCT_NAME: ColmiSync
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  ColmiSync:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../ColmiSync/Sources
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        INFOPLIST_FILE: ../ColmiSync/Sources/Info.plist
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_IDENTITY: "-"
+        LSUIElement: YES
