@@ -44,14 +44,28 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         // Wait for Bluetooth to be ready
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 2))
         
+        log("🔵 Bluetooth state: \(centralManager.state.rawValue) (4=poweredOn)")
+        
         guard centralManager.state == .poweredOn else {
-            log("❌ Bluetooth not available")
+            log("❌ Bluetooth not available (state=\(centralManager.state.rawValue))")
             return
         }
         
         // Scan-only mode: just check if ring is nearby with good signal
         if scanOnly {
             log("📡 Scan-only mode - checking for ring...")
+            
+            // First try to retrieve already-paired peripheral
+            if let ringId = savedRingId {
+                let peripherals = centralManager.retrievePeripherals(withIdentifiers: [ringId])
+                if let p = peripherals.first {
+                    log("📱 Found paired ring via system cache!")
+                    log("✅ Ring is available for connection")
+                    return
+                }
+                log("🔍 Ring not in system cache, scanning...")
+            }
+            
             let rssi = scanForRing()
             if rssi > -100 {
                 log("📱 Ring found! RSSI: \(rssi)")
@@ -61,7 +75,7 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                     log("⚠️ Signal too weak for sync (need >= \(minRssi))")
                 }
             } else {
-                log("❌ Ring not found")
+                log("❌ Ring not found via scan")
             }
             return
         }
@@ -638,6 +652,18 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         log("📋 Loaded saved ring: \(savedRingName ?? "Unknown")")
     }
     
+    private func saveRing(id: UUID, name: String) {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".colmisync")
+        let file = dir.appendingPathComponent("paired_ring.json")
+        
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let json = ["id": id.uuidString, "name": name]
+        if let data = try? JSONEncoder().encode(json) {
+            try? data.write(to: file)
+        }
+    }
+    
     /// Parse CLI arguments
     nonisolated static func parseArgs(_ args: [String]) -> (scanTime: Int, retries: Int, historyDays: Int, enableMonitoring: Int, minRssi: Int, scanOnly: Bool) {
         var scanTime = 30
@@ -730,15 +756,20 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? ""
         let rssiValue = RSSI.intValue
         
-        // Prioritize our saved ring if we have one
-        let isSavedRing = Task { @MainActor in
-            return self.savedRingId == peripheral.identifier
-        }
-        
         Task { @MainActor in
-            let saved = await isSavedRing.value
+            // Match by UUID OR by saved name (UUIDs can change between sessions on macOS)
+            let matchesSavedId = self.savedRingId == peripheral.identifier
+            let matchesSavedName = self.savedRingName != nil && name == self.savedRingName
+            let isOurRing = matchesSavedId || matchesSavedName
             
-            if saved {
+            if isOurRing {
+                // Update saved UUID if it changed (name matched but ID didn't)
+                if matchesSavedName && !matchesSavedId {
+                    self.savedRingId = peripheral.identifier
+                    self.saveRing(id: peripheral.identifier, name: name)
+                    log("🔄 Updated ring UUID (was changed by system)")
+                }
+                
                 // Save RSSI for signal strength checking
                 self.lastSeenRssi = rssiValue
                 
