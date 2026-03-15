@@ -11,6 +11,8 @@ struct ColmiSyncApp: App {
             let cli = CLISync()
             cli.scanTimeout = TimeInterval(args.scanTime)
             cli.maxRetries = args.retries
+            cli.historyDays = args.historyDays
+            cli.enableMonitoringInterval = args.enableMonitoring
             cli.run()
             exit(0)
         }

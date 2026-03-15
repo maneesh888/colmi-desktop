@@ -4,6 +4,12 @@ import CoreBluetooth
 // Simple CLI sync tool - runs once, syncs, exits
 // Usage: swift run ColmiSync --cli [--scan-time 30]
 
+// Force unbuffered stdout
+private func log(_ message: String) {
+    print(message)
+    fflush(stdout)
+}
+
 @MainActor
 class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var centralManager: CBCentralManager!
@@ -19,6 +25,8 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     // Configurable settings
     var scanTimeout: TimeInterval = 30  // Default 30 seconds
     var maxRetries: Int = 3
+    var historyDays: Int = 0  // 0 = no history sync
+    var enableMonitoringInterval: Int = 0  // 0 = don't change, >0 = enable with interval in minutes
     
     override init() {
         super.init()
@@ -27,13 +35,13 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
     
     func run() {
-        print("🔄 ColmiSync CLI - Starting...")
+        log("🔄 ColmiSync CLI - Starting...")
         
         // Wait for Bluetooth to be ready
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 2))
         
         guard centralManager.state == .poweredOn else {
-            print("❌ Bluetooth not available")
+            log("❌ Bluetooth not available")
             return
         }
         
@@ -42,15 +50,15 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         // Try multiple connection attempts
         for attempt in 1...maxRetries {
             if attempt > 1 {
-                print("🔄 Retry attempt \(attempt)/\(maxRetries)...")
+                log("🔄 Retry attempt \(attempt)/\(maxRetries)...")
             }
             
             // Try to connect to saved ring first
             if let ringId = savedRingId {
-                print("📡 Looking for saved ring...")
+                log("📡 Looking for saved ring...")
                 let peripherals = centralManager.retrievePeripherals(withIdentifiers: [ringId])
                 if let p = peripherals.first {
-                    print("✅ Found saved ring, connecting...")
+                    log("✅ Found saved ring, connecting...")
                     peripheral = p
                     peripheral?.delegate = self
                     centralManager.connect(p, options: nil)
@@ -65,7 +73,7 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                         connected = true
                         break
                     } else {
-                        print("⚠️ Direct connect failed, will scan...")
+                        log("⚠️ Direct connect failed, will scan...")
                         if let p = peripheral {
                             centralManager.cancelPeripheralConnection(p)
                         }
@@ -82,16 +90,19 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             
             // Brief pause between retries
             if attempt < maxRetries {
-                print("⏳ Waiting 3 seconds before retry...")
+                log("⏳ Waiting 3 seconds before retry...")
                 RunLoop.current.run(until: Date(timeIntervalSinceNow: 3))
             }
         }
         
         if connected && rxCharacteristic != nil {
-            print("✅ Connected! Syncing...")
+            log("✅ Connected! Syncing...")
             syncData()
+            if historyDays > 0 {
+                syncHistory(days: historyDays)
+            }
         } else {
-            print("❌ Could not find/connect to ring after \(maxRetries) attempts")
+            log("❌ Could not find/connect to ring after \(maxRetries) attempts")
         }
     }
     
@@ -103,7 +114,7 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         centralManager.scanForPeripherals(withServices: nil, options: [
             CBCentralManagerScanOptionAllowDuplicatesKey: true  // See the ring even if already seen
         ])
-        print("📡 Scanning for \(Int(scanTimeout)) seconds...")
+        log("📡 Scanning for \(Int(scanTimeout)) seconds...")
         
         let deadline = Date(timeIntervalSinceNow: scanTimeout)
         while Date() < deadline {
@@ -124,18 +135,18 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         // Get battery
         if let battery = sendCommand(0x03) {
             let level = Int(battery[1])
-            print("🔋 Battery: \(level)%")
+            log("🔋 Battery: \(level)%")
             saveLatest(battery: level)
         }
         
         // Get real-time HR - wait for valid reading
-        print("❤️ Measuring heart rate (up to 30s)...")
+        log("❤️ Measuring heart rate (up to 30s)...")
         let hrStart = Data([0x69, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6B])
         if let hr = waitForValidReading(startPacket: hrStart, type: 0x01, timeout: 30) {
-            print("❤️ Heart Rate: \(hr) BPM")
+            log("❤️ Heart Rate: \(hr) BPM")
             saveLatest(heartRate: hr)
         } else {
-            print("⚠️ Could not get heart rate - ensure ring is snug on finger")
+            log("⚠️ Could not get heart rate - ensure ring is snug on finger")
         }
         // Stop HR
         let hrStop = Data([0x6A, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6B])
@@ -145,23 +156,141 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 2))
         
         // Get real-time SpO2 - wait for valid reading
-        print("🫁 Measuring SpO2 (up to 30s)...")
+        log("🫁 Measuring SpO2 (up to 30s)...")
         let spo2Start = Data([0x69, 0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6D])
         if let spo2 = waitForValidReading(startPacket: spo2Start, type: 0x03, timeout: 30) {
-            print("🫁 SpO2: \(spo2)%")
+            log("🫁 SpO2: \(spo2)%")
             saveLatest(spO2: spo2)
         } else {
-            print("⚠️ Could not get SpO2 - ensure ring is snug on finger")
+            log("⚠️ Could not get SpO2 - ensure ring is snug on finger")
         }
         // Stop SpO2
         let spo2Stop = Data([0x6A, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6D])
         _ = sendPacket(spo2Stop, waitTime: 1)
         
-        print("✅ Sync complete!")
+        // Enable continuous monitoring if requested
+        if enableMonitoringInterval > 0 {
+            log("⚙️ Enabling continuous HR monitoring (every \(enableMonitoringInterval) min)...")
+            enableContinuousMonitoring(intervalMinutes: enableMonitoringInterval)
+        }
+        
+        log("✅ Sync complete!")
+    }
+    
+    private func enableContinuousMonitoring(intervalMinutes: Int) {
+        // HR Log Settings command 0x16
+        // Write: [0x16, 0x02, enabled (1=on), interval_minutes, ...]
+        var packet = Data(count: 16)
+        packet[0] = 0x16  // Command
+        packet[1] = 0x02  // Write subtype
+        packet[2] = 0x01  // Enabled = true
+        packet[3] = UInt8(intervalMinutes)
+        
+        // Calculate checksum
+        var checksum: UInt8 = 0
+        for i in 0..<15 {
+            checksum = checksum &+ packet[i]
+        }
+        packet[15] = checksum
+        
+        if let response = sendPacket(packet, waitTime: 2, expectedCmd: 0x16) {
+            if response[2] == 0x01 {
+                log("   ✅ Continuous monitoring enabled")
+            } else {
+                log("   ⚠️ Monitoring disabled in response")
+            }
+        } else {
+            log("   ⚠️ No response to settings command")
+        }
+    }
+    
+    private func syncHistory(days: Int) {
+        log("📅 Syncing \(days) days of history...")
+        
+        let calendar = Calendar.current
+        let today = Date()
+        let parser = HeartRateLogParser()
+        
+        for dayOffset in 0..<days {
+            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
+            let dateStr = ISO8601DateFormatter().string(from: date).prefix(10)
+            
+            // Request HR log for this day
+            let requestPacket = HeartRateLogParser.requestPacket(for: date)
+            parser.reset()
+            
+            log("📊 Fetching HR log for \(dateStr)...")
+            
+            // Send request and collect multi-packet response
+            var hrLog: HeartRateLog?
+            let deadline = Date(timeIntervalSinceNow: 10) // 10 second timeout per day
+            
+            _ = sendPacket(requestPacket, waitTime: 0.5)
+            
+            while Date() < deadline && hrLog == nil {
+                if let response = waitForResponse(timeout: 2) {
+                    if let result = parser.parse(response) {
+                        hrLog = result
+                    }
+                } else {
+                    break  // No more data
+                }
+            }
+            
+            if let hrLog = hrLog {
+                let validCount = hrLog.validReadings.count
+                log("   ✅ \(validCount) readings")
+                saveHRLog(hrLog, dateStr: String(dateStr))
+            } else {
+                log("   ⚠️ No data")
+            }
+            
+            // Small delay between days
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
+        }
+        
+        log("📅 History sync complete!")
         
         // Disconnect
         if let p = peripheral {
             centralManager.cancelPeripheralConnection(p)
+        }
+    }
+    
+    private func waitForResponse(timeout: TimeInterval) -> Data? {
+        guard let rx = rxCharacteristic else { return nil }
+        
+        var responseData: Data?
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        
+        pendingResponse = { data in
+            responseData = data
+        }
+        
+        peripheral?.setNotifyValue(true, for: rx)
+        
+        while Date() < deadline && responseData == nil {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+        }
+        
+        return responseData
+    }
+    
+    private func saveHRLog(_ log: HeartRateLog, dateStr: String) {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("clawd/health")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        
+        let file = dir.appendingPathComponent("hr-\(dateStr).json")
+        
+        let data: [String: Any] = [
+            "date": dateStr,
+            "readings": log.readings,
+            "validCount": log.validReadings.count
+        ]
+        
+        if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]) {
+            try? jsonData.write(to: file)
         }
     }
     
@@ -238,13 +367,15 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
         savedRingId = uuid
         savedRingName = json["name"]
-        print("📋 Loaded saved ring: \(savedRingName ?? "Unknown")")
+        log("📋 Loaded saved ring: \(savedRingName ?? "Unknown")")
     }
     
     /// Parse CLI arguments
-    nonisolated static func parseArgs(_ args: [String]) -> (scanTime: Int, retries: Int) {
+    nonisolated static func parseArgs(_ args: [String]) -> (scanTime: Int, retries: Int, historyDays: Int, enableMonitoring: Int) {
         var scanTime = 30
         var retries = 3
+        var historyDays = 0  // 0 = no history sync
+        var enableMonitoring = 0  // 0 = don't change, >0 = enable with interval
         
         var i = 0
         while i < args.count {
@@ -254,12 +385,30 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             } else if args[i] == "--retries" && i + 1 < args.count {
                 retries = Int(args[i + 1]) ?? 3
                 i += 2
+            } else if args[i] == "--history" {
+                // --history OR --history 7
+                if i + 1 < args.count, let days = Int(args[i + 1]), days > 0 {
+                    historyDays = days
+                    i += 2
+                } else {
+                    historyDays = 7  // default 7 days
+                    i += 1
+                }
+            } else if args[i] == "--enable-monitoring" {
+                // --enable-monitoring OR --enable-monitoring 5
+                if i + 1 < args.count, let interval = Int(args[i + 1]), interval > 0 {
+                    enableMonitoring = interval
+                    i += 2
+                } else {
+                    enableMonitoring = 5  // default 5 minutes
+                    i += 1
+                }
             } else {
                 i += 1
             }
         }
         
-        return (scanTime, retries)
+        return (scanTime, retries, historyDays, enableMonitoring)
     }
     
     private func saveLatest(heartRate: Int? = nil, spO2: Int? = nil, battery: Int? = nil) {
@@ -313,7 +462,7 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             let saved = await isSavedRing.value
             
             if saved {
-                print("📱 Found our ring: \(name) (RSSI: \(RSSI))")
+                log("📱 Found our ring: \(name) (RSSI: \(RSSI))")
                 central.stopScan()
                 self.peripheral = peripheral
                 peripheral.delegate = self
@@ -321,7 +470,7 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             } else if name.hasPrefix("R0") || name.lowercased().contains("colmi") {
                 // Only connect to other rings if we don't have a saved one
                 if self.savedRingId == nil && self.peripheral == nil {
-                    print("📱 Found ring: \(name) (RSSI: \(RSSI))")
+                    log("📱 Found ring: \(name) (RSSI: \(RSSI))")
                     central.stopScan()
                     self.peripheral = peripheral
                     peripheral.delegate = self
@@ -332,12 +481,12 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
     
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        print("🔗 Connected, discovering services...")
+        log("🔗 Connected, discovering services...")
         peripheral.discoverServices([CBUUID(string: "6E40FFF0-B5A3-F393-E0A9-E50E24DCCA9E")])
     }
     
     nonisolated func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        print("❌ Failed to connect: \(error?.localizedDescription ?? "unknown")")
+        log("❌ Failed to connect: \(error?.localizedDescription ?? "unknown")")
     }
     
     // MARK: - CBPeripheralDelegate
@@ -359,7 +508,7 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                     peripheral.setNotifyValue(true, for: char)
                 }
             }
-            print("✅ Characteristics ready")
+            log("✅ Characteristics ready")
         }
     }
     
