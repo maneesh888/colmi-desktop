@@ -44,23 +44,19 @@
 - Read current goals
 - **Status:** Protocol documented
 
-### 4. Notifications (0x73)
-- Push notifications to ring (calls, messages)
-- May require pairing/bonding
-- **Status:** Needs testing
-
-### 5. Set Time (0x01)
+### 4. Set Time (0x01)
 - Sync time with ring on connect
 - Already have packet format
 - **Status:** Easy to add
 
-### 6. Phone Name (0x04)
-- Set phone/app identity on ring
-- **Status:** Low priority
-
-### 7. Factory Reset (0xff)
+### 5. Factory Reset (0xff)
 - Reset ring to defaults
 - **Status:** Dangerous, add with confirmation
+
+## ❌ Not Applicable to R09
+- **Notifications (0x73)** — R09 has no display/vibration
+- **Phone Name (0x04)** — watch feature
+- **NFC Payments** — not supported
 
 ## 🧪 Testing Checklist
 
