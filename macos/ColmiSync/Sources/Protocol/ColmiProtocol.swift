@@ -208,8 +208,8 @@ class HeartRateLogParser {
         
         // First data packet (subType 1) - contains timestamp
         if subType == 1 {
-            // Bytes 2-5: Unix timestamp (little-endian)
-            let ts = data[2..<6].withUnsafeBytes { $0.load(as: UInt32.self) }
+            // Bytes 2-5: Unix timestamp (little-endian) - read safely to avoid alignment issues
+            let ts = UInt32(data[2]) | (UInt32(data[3]) << 8) | (UInt32(data[4]) << 16) | (UInt32(data[5]) << 24)
             timestamp = Date(timeIntervalSince1970: TimeInterval(ts))
             
             // Bytes 6-14: First 9 HR values
@@ -553,8 +553,8 @@ class SpO2LogParser {
         
         // First data packet (subType 1) - contains timestamp
         if subType == 1 {
-            // Bytes 2-5: Unix timestamp (little-endian)
-            let ts = data[2..<6].withUnsafeBytes { $0.load(as: UInt32.self) }
+            // Bytes 2-5: Unix timestamp (little-endian) - read safely to avoid alignment issues
+            let ts = UInt32(data[2]) | (UInt32(data[3]) << 8) | (UInt32(data[4]) << 16) | (UInt32(data[5]) << 24)
             timestamp = Date(timeIntervalSince1970: TimeInterval(ts))
             
             // Bytes 6-14: First 9 SpO2 values
