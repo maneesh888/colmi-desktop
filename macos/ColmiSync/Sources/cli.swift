@@ -386,27 +386,27 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 log("   🚶 Steps: \(activity.totalSteps), Cal: \(activity.totalCalories)")
                 saveActivity(activity, dateStr: String(dateStr))
             } else {
-                // Fallback: Try to sum any received activity packets from queue
-                var totalSteps = 0
-                var totalCal = 0
-                var totalDist = 0
-                var packetCount = 0
+                // Fallback: Check global activity buffer for any packets we captured
+                activityBufferLock.lock()
+                let bufferedPackets = activityPacketBuffer.filter { $0[1] != 0xF0 } // Skip headers
+                activityPacketBuffer.removeAll()
+                activityBufferLock.unlock()
                 
-                responseQueueLock.lock()
-                for packet in responseQueue where packet.count == 16 && packet[0] == 0x43 && packet[1] != 0xF0 && packet[1] != 0xFF {
-                    let steps = Int(packet[9]) | (Int(packet[10]) << 8)
-                    let cal = Int(packet[7]) | (Int(packet[8]) << 8)
-                    let dist = Int(packet[11]) | (Int(packet[12]) << 8)
-                    totalSteps += steps
-                    totalCal += cal
-                    totalDist += dist
-                    packetCount += 1
-                }
-                responseQueue.removeAll()
-                responseQueueLock.unlock()
-                
-                if packetCount > 0 {
-                    log("   🚶 Steps: \(totalSteps), Cal: \(totalCal) (from \(packetCount) raw packets)")
+                if !bufferedPackets.isEmpty {
+                    var totalSteps = 0
+                    var totalCal = 0
+                    var totalDist = 0
+                    
+                    for packet in bufferedPackets {
+                        let steps = Int(packet[9]) | (Int(packet[10]) << 8)
+                        let cal = Int(packet[7]) | (Int(packet[8]) << 8)
+                        let dist = Int(packet[11]) | (Int(packet[12]) << 8)
+                        totalSteps += steps
+                        totalCal += cal
+                        totalDist += dist
+                    }
+                    
+                    log("   🚶 Steps: \(totalSteps), Cal: \(totalCal), Dist: \(totalDist)m (from \(bufferedPackets.count) packets)")
                 } else {
                     log("   🚶 Steps: no data")
                 }
@@ -548,6 +548,11 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     // Response queue for multi-packet responses
     private var responseQueue: [Data] = []
     private let responseQueueLock = NSLock()
+    
+    // Global activity packet collector - captures activity packets whenever they arrive
+    // Using nonisolated(unsafe) since it's protected by activityBufferLock
+    nonisolated(unsafe) private var activityPacketBuffer: [Data] = []
+    nonisolated(unsafe) private let activityBufferLock = NSLock()
     
     private func waitForResponse(timeout: TimeInterval) -> Data? {
         // First check if there's already something in the queue
@@ -965,6 +970,14 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         // Debug: print received packet
         let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
         print("📥 RX: \(hex)")
+        
+        // Capture activity packets (0x43) to global buffer whenever they arrive
+        if data.count == 16 && data[0] == 0x43 && data[1] != 0xFF {
+            activityBufferLock.lock()
+            activityPacketBuffer.append(data)
+            activityBufferLock.unlock()
+        }
+        
         Task { @MainActor in
             self.pendingResponse?(data)
         }
