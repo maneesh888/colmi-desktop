@@ -324,9 +324,18 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         let stressParser = StressLogParser()
         let hrvParser = HRVLogParser()
         
+        // Clear any stale packets from queue
+        responseQueueLock.lock()
+        responseQueue.removeAll()
+        responseQueueLock.unlock()
+        
         for dayOffset in 0..<days {
             guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
-            let dateStr = ISO8601DateFormatter().string(from: date).prefix(10)
+            // Use local timezone for date string (ISO8601DateFormatter defaults to UTC)
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd"
+            df.timeZone = .current
+            let dateStr = df.string(from: date)
             
             log("📊 Day \(dateStr):")
             
