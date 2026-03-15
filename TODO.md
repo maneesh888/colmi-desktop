@@ -16,7 +16,19 @@
 
 ## 🔨 To Build (Priority Order)
 
-### 1. Sleep Tracking (0xbc + 0x27)
+### 1. 🗄️ SQLite Database Migration (HIGH PRIORITY)
+- Replace JSON files with SQLite database
+- Migrate existing data from `~/clawd/health/*.json`
+- Schema similar to Gadgetbridge
+- Tables: readings (HR, SpO2, stress, HRV), activity, sleep
+- **Status:** Queued - heavy task, do at night
+- **Files to migrate:**
+  - `~/.colmisync/paired_ring.json` → devices table
+  - `~/clawd/health/hr-*.json` → readings table
+  - `~/clawd/health/activity-*.json` → activity table
+  - `~/clawd/health/latest.json` → can derive from DB
+
+### 2. Sleep Tracking (0xbc + 0x27)
 - Big Data V2 command
 - Sleep stages: Light/Deep/REM/Awake
 - Sleep start/end times
