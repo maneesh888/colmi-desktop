@@ -401,9 +401,8 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 log("   🫁 SpO2: no data")
             }
             
-            // 4. Stress Log (only for today - uses different request format)
-            if dayOffset == 0 {
-                let stressPacket = StressLogParser.requestPacket
+            // 4. Stress Log
+            let stressPacket = StressLogParser.requestPacket(dayOffset: dayOffset)
                 stressParser.reset()
                 
                 var stressLog: StressLog?
@@ -445,12 +444,11 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                     }
                 }
                 
-                if let hrvLog = hrvLog {
-                    log("   💓 HRV: \(hrvLog.validReadings.count) readings")
-                    saveHRVLog(hrvLog, dateStr: String(dateStr))
-                } else {
-                    log("   💓 HRV: no data")
-                }
+            if let hrvLog = hrvLog {
+                log("   💓 HRV: \(hrvLog.validReadings.count) readings")
+                saveHRVLog(hrvLog, dateStr: String(dateStr))
+            } else {
+                log("   💓 HRV: no data")
             }
             
             // Small delay between days

@@ -626,11 +626,13 @@ struct StressLog {
 class StressLogParser {
     private var rawData: [Int] = []
     private var expectedPackets = 0
+    private var expectedValues = 0
     private var receivedPackets = 0
     
     func reset() {
         rawData = []
         expectedPackets = 0
+        expectedValues = 0
         receivedPackets = 0
     }
     
@@ -641,7 +643,7 @@ class StressLogParser {
             return nil
         }
         
-        let packetNr = data[1] & 0xff
+        let packetNr = data[1]
         
         // Error/empty response
         if packetNr == 0xff {
@@ -649,21 +651,22 @@ class StressLogParser {
             return nil
         }
         
-        // Initial response (packet 0)
+        // Header packet (packet 0)
+        // Format: [0x37, 0x00, numPackets, numValues, ...]
         if packetNr == 0 {
-            rawData = Array(repeating: 0, count: 48)  // 48 readings (30 min intervals)
+            expectedPackets = Int(data[2])
+            expectedValues = Int(data[3])
+            rawData = Array(repeating: 0, count: max(48, expectedValues))
             receivedPackets = 1
             return nil
         }
         
         // Data packets
-        // Packet 1: bytes 3-14 = 12 values (first 6 hours)
-        // Packet 2+: bytes 2-14 = 13 values
+        // Data starts at byte 2 for all data packets
         let pktNr = Int(packetNr)
-        let startByte = pktNr == 1 ? 3 : 2
-        var dataIndex = pktNr == 1 ? 0 : 12 + (pktNr - 2) * 13
+        var dataIndex = (pktNr - 1) * 13  // 13 values per packet
         
-        for i in startByte..<15 {
+        for i in 2..<15 {
             if dataIndex < rawData.count {
                 rawData[dataIndex] = Int(data[i])
                 dataIndex += 1
@@ -671,10 +674,9 @@ class StressLogParser {
         }
         receivedPackets += 1
         
-        // Check if we have all 48 values (4 packets total: 0, 1, 2, 3)
-        // Packet 1: 12 values, Packet 2: 13 values, Packet 3: 13 values, Packet 4: 10 values
-        if pktNr >= 3 {
-            let result = StressLog(date: Date(), readings: rawData)
+        // Check if we've received all expected packets
+        if receivedPackets >= expectedPackets {
+            let result = StressLog(date: Date(), readings: Array(rawData.prefix(expectedValues)))
             reset()
             return result
         }
@@ -682,8 +684,9 @@ class StressLogParser {
         return nil
     }
     
-    static var requestPacket: Data {
-        ColmiPacket.make(command: .readStress)
+    static func requestPacket(dayOffset: Int = 0) -> Data {
+        let payload = Data([UInt8(clamping: dayOffset)])
+        return ColmiPacket.make(command: .readStress, payload: payload)
     }
 }
 
@@ -700,14 +703,14 @@ struct HRVLog {
 
 class HRVLogParser {
     private var rawData: [Int] = []
-    private var timestamp: Date?
     private var expectedPackets = 0
+    private var expectedValues = 0
     private var receivedPackets = 0
     
     func reset() {
         rawData = []
-        timestamp = nil
         expectedPackets = 0
+        expectedValues = 0
         receivedPackets = 0
     }
     
@@ -718,46 +721,39 @@ class HRVLogParser {
             return nil
         }
         
-        let subType = data[1]
+        let packetNr = data[1]
         
         // Error response
-        if subType == 0xff {
+        if packetNr == 0xff {
             reset()
             return nil
         }
         
-        // Header packet
-        if subType == 0 {
+        // Header packet (packet 0)
+        // Format: [0x39, 0x00, numPackets, numValues, ...]
+        if packetNr == 0 {
             expectedPackets = Int(data[2])
-            rawData = []
+            expectedValues = Int(data[3])
+            rawData = Array(repeating: 0, count: max(48, expectedValues))
             receivedPackets = 1
             return nil
         }
         
-        // First data packet has timestamp
-        if subType == 1 {
-            let ts = data[2..<6].withUnsafeBytes { $0.load(as: UInt32.self) }
-            timestamp = Date(timeIntervalSince1970: TimeInterval(ts))
-            
-            // HRV values are 2 bytes each (little endian)
-            for i in stride(from: 6, to: 14, by: 2) {
-                let hrv = Int(data[i]) | (Int(data[i+1]) << 8)
-                rawData.append(hrv)
-            }
-            receivedPackets += 1
-            return nil
-        }
+        // Data packets - single byte values
+        let pktNr = Int(packetNr)
+        var dataIndex = (pktNr - 1) * 13  // 13 values per packet
         
-        // Subsequent data packets - HRV values are 2 bytes each
-        for i in stride(from: 2, to: 14, by: 2) {
-            let hrv = Int(data[i]) | (Int(data[i+1]) << 8)
-            rawData.append(hrv)
+        for i in 2..<15 {
+            if dataIndex < rawData.count {
+                rawData[dataIndex] = Int(data[i])
+                dataIndex += 1
+            }
         }
         receivedPackets += 1
         
-        // Check if complete
-        if expectedPackets > 0, subType == UInt8(truncatingIfNeeded: expectedPackets - 1), let ts = timestamp {
-            let result = HRVLog(date: ts, readings: rawData)
+        // Check if we've received all expected packets
+        if receivedPackets >= expectedPackets {
+            let result = HRVLog(date: Date(), readings: Array(rawData.prefix(expectedValues)))
             reset()
             return result
         }
