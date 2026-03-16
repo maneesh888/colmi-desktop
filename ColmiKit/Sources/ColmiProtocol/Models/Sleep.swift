@@ -1,6 +1,11 @@
 import Foundation
 
 // MARK: - Sleep Session
+//
+// NOTE: R09 rings do NOT support the Big Data V2 (0xBC) command for sleep data.
+// The SleepParser below is for rings that support it (R02, R03, R06).
+// For R09, use SleepInferenceEngine to infer sleep from heart rate patterns.
+// See: SleepInference.swift
 
 /// A single sleep session
 public struct SleepSession: Codable, Sendable, Equatable {

@@ -189,4 +189,68 @@ struct ModelTests {
         #expect(enable[1] == 0x02)
         #expect(enable[2] == 0x01)
     }
+    
+    // MARK: - Sleep Inference Tests
+    
+    @Test("Sleep inference engine config defaults")
+    func testSleepInferenceConfig() {
+        let config = SleepInferenceEngine.Config()
+        
+        // Check default values are reasonable
+        #expect(config.overnightStartHour == 20)  // 8 PM
+        #expect(config.overnightEndHour == 10)    // 10 AM
+        #expect(config.minSleepReadings == 12)    // 1 hour
+        #expect(config.minSleepDurationMinutes == 30)
+        #expect(config.sleepHRDropPercent == 0.10)
+    }
+    
+    @Test("Sleep inference engine initialization")
+    func testSleepInferenceEngineInit() {
+        // Default config
+        let engine1 = SleepInferenceEngine()
+        #expect(engine1.config.minSleepReadings == 12)
+        
+        // Custom config
+        var customConfig = SleepInferenceEngine.Config()
+        customConfig.minSleepReadings = 6
+        let engine2 = SleepInferenceEngine(config: customConfig)
+        #expect(engine2.config.minSleepReadings == 6)
+    }
+    
+    @Test("Sleep inference quality score")
+    func testSleepQualityScore() {
+        let engine = SleepInferenceEngine()
+        let now = Date()
+        
+        // Create a good sleep session (8 hours with varied stages)
+        let start = now.addingTimeInterval(-8 * 60 * 60)
+        let stages = [
+            SleepStageRecord(startTime: start, stage: .light, durationMinutes: 30),
+            SleepStageRecord(startTime: start.addingTimeInterval(30 * 60), stage: .deep, durationMinutes: 90),
+            SleepStageRecord(startTime: start.addingTimeInterval(120 * 60), stage: .rem, durationMinutes: 30),
+            SleepStageRecord(startTime: start.addingTimeInterval(150 * 60), stage: .light, durationMinutes: 60),
+            SleepStageRecord(startTime: start.addingTimeInterval(210 * 60), stage: .deep, durationMinutes: 60),
+            SleepStageRecord(startTime: start.addingTimeInterval(270 * 60), stage: .rem, durationMinutes: 40),
+            SleepStageRecord(startTime: start.addingTimeInterval(310 * 60), stage: .light, durationMinutes: 90),
+            SleepStageRecord(startTime: start.addingTimeInterval(400 * 60), stage: .awake, durationMinutes: 10),
+            SleepStageRecord(startTime: start.addingTimeInterval(410 * 60), stage: .light, durationMinutes: 70),
+        ]
+        
+        let session = SleepSession(startTime: start, endTime: now, stages: stages)
+        
+        let score = engine.calculateQualityScore(session)
+        
+        // Good sleep should score 60+
+        #expect(score >= 50)
+        #expect(score <= 100)
+    }
+    
+    @Test("Sleep inference no data returns nil")
+    func testSleepInferenceNoData() {
+        let engine = SleepInferenceEngine()
+        
+        // Empty logs
+        let session = engine.inferSleep(from: [], for: Date())
+        #expect(session == nil)
+    }
 }
