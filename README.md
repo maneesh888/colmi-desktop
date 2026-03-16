@@ -34,18 +34,24 @@ No accounts. No cloud. No subscription. Just your data, under your control.
 | 🔋 Battery Level | ✅ |
 | 📳 Find Ring (Vibrate) | ✅ |
 | 🔄 Auto-Reconnect | ✅ |
-| 😴 Sleep Tracking | 🚧 Coming Soon |
-| 📊 Historical Data | 🚧 Coming Soon |
+| 📊 Historical Steps | ✅ |
+| 📊 Historical HR/SpO2 | ⚠️ Partial (R02/R06 only) |
+| 😴 Sleep Tracking | ❌ Protocol unknown |
+| 📊 Stress/HRV History | ❌ Protocol unknown |
 | 🤖 Clawdbot Integration | 🚧 Coming Soon |
 
 ## Supported Rings
 
 Any Colmi ring using the **QRing app** protocol:
 
-- ✅ Colmi R09
-- ✅ Colmi R06  
-- ✅ Colmi R09 *(actively tested)*
-- ✅ Colmi R10
+| Ring | Real-time | Steps | HR History | Sleep |
+|------|-----------|-------|------------|-------|
+| R02 | ✅ | ✅ | ✅ | ❓ |
+| R06 | ✅ | ✅ | ✅ | ❓ |
+| **R09** | ✅ | ✅ | ⚠️ | ❌ |
+| R10 | ✅ | ✅ | ❓ | ❓ |
+
+**R09 Notes:** Actively tested. Real-time readings and step history work well. Historical HR/SpO2/stress/HRV return empty responses — the R09 may use a different (undocumented) protocol for these features. Sleep data protocol is unknown for all models.
 
 ## Quick Start
 
@@ -177,6 +183,23 @@ We enable:
 
 Your health data should train YOUR AI, not someone else's.
 
+## Known Limitations
+
+### Protocol Gaps
+The Colmi protocol is reverse-engineered from community efforts. Some features remain undocumented:
+
+- **Sleep tracking:** No known command to retrieve sleep data. QRing app may calculate sleep from HR patterns client-side, or use an undocumented protocol.
+- **R09 differences:** The R09 uses command 0x43 for activity but returns empty (0xFF) for historical HR/SpO2/stress/HRV requests that work on R02/R06. May require different command parameters.
+- **Big Data protocol (0xBC):** Documented for some rings but returns "not supported" (0xEE) on R09.
+
+### Contributing to Protocol Research
+If you can help reverse-engineer the protocol:
+1. Use a BLE sniffer (e.g., nRF Connect) to capture QRing ↔ ring traffic
+2. Document any new commands in [docs/PROTOCOL.md](docs/PROTOCOL.md)
+3. Test on different ring models (R02, R06, R09, R10)
+
+See [Gadgetbridge PR #3896](https://codeberg.org/Freeyourgadget/Gadgetbridge/pulls/3896) for ongoing Android reverse-engineering work.
+
 ## Technical Details
 
 ### BLE Protocol
@@ -209,15 +232,17 @@ See [docs/PROTOCOL.md](docs/PROTOCOL.md) for packet formats.
 - [x] Auto-reconnect
 
 ### Health Data
-- [x] HR logs (historical 24h data, 288 readings/day)
-- [x] SpO2 logs (historical data)
+- [x] HR logs (historical 24h data, 288 readings/day) — *R02/R06 only*
+- [x] SpO2 logs (historical data) — *R02/R06 only*
+- [x] Steps/activity history (works on all models including R09)
 - [x] Continuous monitoring settings (enable/disable, interval)
 - [x] 7-day history sync on connect
 - [x] JSON storage for all data types
 - [x] CLI mode for scripted sync
-- [ ] Sleep tracking & analysis (infer from HR patterns)
-- [ ] Stress data (protocol undocumented)
-- [ ] HRV (may not be hardware supported)
+- [ ] Sleep tracking — *blocked: protocol unknown, needs reverse engineering*
+- [ ] Stress data — *blocked: protocol unknown*
+- [ ] HRV data — *blocked: protocol unknown*
+- [ ] R09 historical HR/SpO2 — *blocked: R09 returns empty, may use different protocol*
 
 ### Clawdbot Integration
 - [x] Local JSON format for AI consumption
