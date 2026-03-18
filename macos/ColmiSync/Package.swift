@@ -9,11 +9,16 @@ let package = Package(
     products: [
         .executable(name: "ColmiSync", targets: ["ColmiSync"])
     ],
-    dependencies: [],
+    dependencies: [
+        // Local ColmiKit package for protocol and models
+        .package(path: "../../ColmiKit")
+    ],
     targets: [
         .executableTarget(
             name: "ColmiSync",
-            dependencies: [],
+            dependencies: [
+                .product(name: "ColmiProtocol", package: "ColmiKit")
+            ],
             path: "Sources",
             exclude: ["Info.plist"]
         ),

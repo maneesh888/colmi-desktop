@@ -1,8 +1,12 @@
 import Foundation
 import CoreBluetooth
+import ColmiProtocol
 
 // Simple CLI sync tool - runs once, syncs, exits
 // Usage: swift run ColmiSync --cli [--scan-time 30]
+
+// Type alias to disambiguate between local and ColmiProtocol types
+typealias CPHeartRateLog = ColmiProtocol.HeartRateLog
 
 // Force unbuffered stdout
 private func log(_ message: String) {
@@ -323,6 +327,10 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         let spo2Parser = SpO2LogParser()
         let stressParser = StressLogParser()
         let hrvParser = HRVLogParser()
+        let sleepEngine = SleepInferenceEngine()
+        
+        // Collect HR logs for sleep inference (convert to ColmiProtocol type)
+        var hrLogsForInference: [CPHeartRateLog] = []
         
         // Clear any stale packets from queue
         responseQueueLock.lock()
@@ -360,6 +368,22 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             if let hrLog = hrLog {
                 log("   ❤️ HR: \(hrLog.validReadings.count) readings")
                 saveHRLog(hrLog, dateStr: String(dateStr))
+                
+                // Convert local HeartRateLog to ColmiProtocol.HeartRateLog for sleep inference
+                let cpHRLog = CPHeartRateLog(date: hrLog.date, readings: hrLog.readings)
+                hrLogsForInference.append(cpHRLog)
+                
+                // Infer sleep from HR data (R09 doesn't support direct sleep sync)
+                if hrLogsForInference.count >= 2 || dayOffset == 0 {
+                    // Need HR data from evening + morning for overnight inference
+                    if let session = sleepEngine.inferSleep(from: hrLogsForInference, for: date) {
+                        let score = sleepEngine.calculateQualityScore(session)
+                        log("   😴 Sleep: \(session.durationFormatted), Quality: \(score)%")
+                        saveSleepSession(session, dateStr: String(dateStr), qualityScore: score)
+                    } else if dayOffset == 0 {
+                        log("   😴 Sleep: insufficient HR data for inference")
+                    }
+                }
             } else {
                 log("   ❤️ HR: no data")
             }
@@ -690,6 +714,43 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             "date": dateStr,
             "readings": log.readings,
             "validCount": log.validReadings.count
+        ]
+        
+        if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]) {
+            try? jsonData.write(to: file)
+        }
+    }
+    
+    private func saveSleepSession(_ session: SleepSession, dateStr: String, qualityScore: Int) {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("clawd/health")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        
+        let file = dir.appendingPathComponent("sleep-\(dateStr).json")
+        let iso = ISO8601DateFormatter()
+        
+        // Format stages for JSON
+        let stagesData: [[String: Any]] = session.stages.map { stage in
+            [
+                "startTime": iso.string(from: stage.startTime),
+                "stage": stage.stage.name,
+                "durationMinutes": stage.durationMinutes
+            ]
+        }
+        
+        let data: [String: Any] = [
+            "date": dateStr,
+            "startTime": iso.string(from: session.startTime),
+            "endTime": iso.string(from: session.endTime),
+            "durationMinutes": session.durationMinutes,
+            "durationFormatted": session.durationFormatted,
+            "qualityScore": qualityScore,
+            "deepSleepMinutes": session.deepSleepMinutes,
+            "lightSleepMinutes": session.lightSleepMinutes,
+            "remSleepMinutes": session.remSleepMinutes,
+            "awakeMinutes": session.awakeMinutes,
+            "stages": stagesData,
+            "source": "inferred"  // Mark as inferred from HR data
         ]
         
         if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]) {
