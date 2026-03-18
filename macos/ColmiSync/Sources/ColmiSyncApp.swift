@@ -5,6 +5,12 @@ struct ColmiSyncApp: App {
     @StateObject private var bleManager = BLEManager()
     
     init() {
+        // Check for summary mode (no Bluetooth needed)
+        if CommandLine.arguments.contains("--summary") {
+            HealthSummary.printSummary(days: 7)
+            exit(0)
+        }
+        
         // Check for CLI mode
         if CommandLine.arguments.contains("--cli") || CommandLine.arguments.contains("--sync") || CommandLine.arguments.contains("--scan-only") || CommandLine.arguments.contains("--history") {
             let args = CLISync.parseArgs(CommandLine.arguments)
