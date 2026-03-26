@@ -26,6 +26,10 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var pendingResponse: ((Data?) -> Void)?
     private let semaphore = DispatchSemaphore(value: 0)
     
+    // SQLite storage for persistent data
+    private var sqliteStore: SQLiteStore?
+    private var ringAddress: String?  // BLE address for SQLite foreign key
+    
     // Configurable settings
     var scanTimeout: TimeInterval = 30  // Default 30 seconds
     var maxRetries: Int = 3
@@ -33,6 +37,7 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var enableMonitoringInterval: Int = 0  // 0 = don't change, >0 = enable with interval in minutes
     var minRssi: Int = -100  // Minimum RSSI to attempt connection (-100 = any)
     var scanOnly: Bool = false  // Just scan for ring, don't sync
+    var enableSqlite: Bool = true  // Enable SQLite storage
     
     private var lastSeenRssi: Int = -100
     
@@ -151,6 +156,29 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         
         if connected && rxCharacteristic != nil {
             log("✅ Connected! Syncing...")
+            
+            // Store ring address for SQLite
+            if let p = peripheral {
+                ringAddress = p.identifier.uuidString
+            }
+            
+            // Initialize SQLite storage
+            if enableSqlite {
+                log("💾 Initializing SQLite storage...")
+                Task {
+                    do {
+                        self.sqliteStore = try await SQLiteStore.open()
+                        if let addr = self.ringAddress {
+                            _ = await self.sqliteStore?.beginSync(ringAddress: addr, comment: "CLI sync")
+                        }
+                        log("   ✅ SQLite ready")
+                    } catch {
+                        log("   ⚠️ SQLite init failed: \(error)")
+                    }
+                }
+                // Brief wait for SQLite init
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
+            }
             
             // Sync time first (important for step tracking)
             log("⏰ Syncing time...")
@@ -636,6 +664,13 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]) {
             try? jsonData.write(to: file)
         }
+        
+        // Also save to SQLite
+        if let store = sqliteStore, let addr = ringAddress {
+            Task {
+                try? await store.saveHeartRateLog(log, ringAddress: addr)
+            }
+        }
     }
     
     private func saveActivity(_ activity: DailyActivity, dateStr: String) {
@@ -665,6 +700,13 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]) {
             try? jsonData.write(to: file)
         }
+        
+        // Also save to SQLite
+        if let store = sqliteStore, let addr = ringAddress {
+            Task {
+                try? await store.saveActivity(activity, ringAddress: addr)
+            }
+        }
     }
     
     private func saveSpO2Log(_ log: SpO2Log, dateStr: String) {
@@ -682,6 +724,13 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         
         if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]) {
             try? jsonData.write(to: file)
+        }
+        
+        // Also save to SQLite
+        if let store = sqliteStore, let addr = ringAddress {
+            Task {
+                try? await store.saveSpO2Log(log, ringAddress: addr)
+            }
         }
     }
     
@@ -755,6 +804,13 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         
         if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]) {
             try? jsonData.write(to: file)
+        }
+        
+        // Also save to SQLite
+        if let store = sqliteStore, let addr = ringAddress {
+            Task {
+                try? await store.saveSleepSession(session, ringAddress: addr)
+            }
         }
     }
     
