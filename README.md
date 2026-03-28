@@ -246,16 +246,18 @@ See [docs/PROTOCOL.md](docs/PROTOCOL.md) for packet formats.
 
 ### Clawdbot Integration
 - [x] Local JSON format for AI consumption
-- [ ] Health data skill for Clawdbot
-- [ ] Daily health summaries
+- [x] Health summary CLI mode (`--summary`)
+- [ ] Daily health summaries via cron
 - [ ] Anomaly detection (unusual HR, poor sleep)
 - [ ] Natural language queries ("How was my sleep?")
 - [ ] Proactive health insights
 
 ### Polish
-- [ ] Background sync daemon (launchd)
+- [x] Background sync daemon (launchd)
+- [x] Xcode project for proper .app bundle
+- [x] SQLite storage (colmi_r02_client compatible)
+- [ ] DMG releases & notarization
 - [ ] Health trend charts
-- [ ] Proper .app bundle & DMG releases
 - [ ] macOS notifications
 - [ ] Linux support (maybe)
 
