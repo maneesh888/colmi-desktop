@@ -15,7 +15,13 @@ struct ColmiSyncApp: App {
         
         // Check for summary mode (no Bluetooth needed)
         if args.contains("--summary") {
-            HealthSummary.printSummary(days: 7)
+            let jsonOutput = args.contains("--json")
+            let days = parseSummaryDays(args)
+            if jsonOutput {
+                HealthSummary.printSummaryJSON(days: days)
+            } else {
+                HealthSummary.printSummary(days: days)
+            }
             exit(0)
         }
         
@@ -56,6 +62,16 @@ struct ColmiSyncApp: App {
             cli.run()
             exit(0)
         }
+    }
+    
+    /// Parse --summary days (default 7)
+    private func parseSummaryDays(_ args: [String]) -> Int {
+        guard let idx = args.firstIndex(of: "--summary"),
+              idx + 1 < args.count,
+              let val = Int(args[idx + 1]), val > 0 else {
+            return 7  // Default 7 days
+        }
+        return val
     }
     
     /// Parse --daemon or --install-daemon interval (default 60 min)
@@ -103,7 +119,8 @@ struct ColmiSyncApp: App {
             --interval N           Daemon sync interval in minutes (default: 60)
         
         OTHER:
-            --summary              Print health summary (last 7 days)
+            --summary [DAYS]       Print health summary (default: 7 days)
+            --json                 Output summary as JSON (for AI/Clawdbot)
             --help, -h             Show this help
         
         EXAMPLES:

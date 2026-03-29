@@ -13,26 +13,16 @@
 - [x] HRV monitoring settings (0x38)
 - [x] HRV log sync (0x39)
 - [x] CLI with --history and --enable-monitoring
+- [x] SQLite storage (colmi_r02_client compatible schema)
+- [x] JSON export for Clawdbot integration
 
 ## 🔨 To Build (Priority Order)
 
-### 1. 🗄️ SQLite Database Migration (HIGH PRIORITY)
-- Replace JSON files with SQLite database
-- Migrate existing data from `~/clawd/health/*.json`
-- Schema similar to Gadgetbridge
-- Tables: readings (HR, SpO2, stress, HRV), activity, sleep
-- **Status:** Queued - heavy task, do at night
-- **Files to migrate:**
-  - `~/.colmisync/paired_ring.json` → devices table
-  - `~/clawd/health/hr-*.json` → readings table
-  - `~/clawd/health/activity-*.json` → activity table
-  - `~/clawd/health/latest.json` → can derive from DB
-
-### 2. Sleep Tracking (0xbc + 0x27)
+### 1. Sleep Tracking (0xbc + 0x27) — BLOCKED
 - Big Data V2 command
 - Sleep stages: Light/Deep/REM/Awake
 - Sleep start/end times
-- **Status:** Protocol documented, ready to implement
+- **Status:** Protocol returns 0xEE (not supported) on R09, needs research
 
 ### 2. SpO2 Monitoring Settings (0x2c)
 - Enable/disable continuous SpO2 monitoring

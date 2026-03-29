@@ -6,7 +6,113 @@ enum HealthSummary {
     private static let healthDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("clawd/health")
     
-    /// Print a health summary for the last N days
+    /// Print a health summary for the last N days (JSON format for AI consumption)
+    static func printSummaryJSON(days: Int = 7) {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        df.timeZone = .current
+        
+        let calendar = Calendar.current
+        let today = Date()
+        
+        var summary: [String: Any] = [
+            "generated": ISO8601DateFormatter().string(from: Date()),
+            "days": days
+        ]
+        
+        // Latest readings
+        if let latest = loadLatest() {
+            var latestData: [String: Any] = [:]
+            if let hr = latest["heartRate"] as? Int, let hrTime = latest["heartRateTime"] as? String {
+                latestData["heartRate"] = ["value": hr, "time": hrTime]
+            }
+            if let spo2 = latest["spO2"] as? Int, let spo2Time = latest["spO2Time"] as? String {
+                latestData["spO2"] = ["value": spo2, "time": spo2Time]
+            }
+            if let battery = latest["battery"] as? Int {
+                latestData["battery"] = battery
+            }
+            if !latestData.isEmpty {
+                summary["latest"] = latestData
+            }
+        }
+        
+        // Daily data
+        var dailyData: [[String: Any]] = []
+        
+        for dayOffset in 0..<days {
+            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
+            let dateStr = df.string(from: date)
+            
+            var dayData: [String: Any] = ["date": dateStr]
+            
+            // Sleep
+            if let sleep = loadSleep(dateStr: dateStr) {
+                dayData["sleep"] = [
+                    "durationMinutes": sleep["durationMinutes"] as? Int ?? 0,
+                    "durationFormatted": sleep["durationFormatted"] as? String ?? "",
+                    "qualityScore": sleep["qualityScore"] as? Int ?? 0,
+                    "deepSleepMinutes": sleep["deepSleepMinutes"] as? Int ?? 0,
+                    "lightSleepMinutes": sleep["lightSleepMinutes"] as? Int ?? 0,
+                    "remSleepMinutes": sleep["remSleepMinutes"] as? Int ?? 0,
+                    "awakeMinutes": sleep["awakeMinutes"] as? Int ?? 0
+                ]
+            }
+            
+            // Activity
+            if let activity = loadActivity(dateStr: dateStr) {
+                if let steps = activity["totalSteps"] as? Int, steps > 0 {
+                    dayData["activity"] = [
+                        "steps": steps,
+                        "calories": activity["totalCalories"] as? Int ?? 0,
+                        "distance": activity["totalDistance"] as? Int ?? 0
+                    ]
+                }
+            }
+            
+            // HR stats
+            if let hr = loadHR(dateStr: dateStr) {
+                if let readings = extractHRReadings(from: hr), !readings.isEmpty {
+                    let avg = readings.reduce(0, +) / readings.count
+                    dayData["heartRate"] = [
+                        "avg": avg,
+                        "min": readings.min() ?? 0,
+                        "max": readings.max() ?? 0,
+                        "count": readings.count
+                    ]
+                }
+            }
+            
+            // Stress
+            if let stress = loadStress(dateStr: dateStr) {
+                if let readings = stress["readings"] as? [Int] {
+                    let valid = readings.filter { $0 > 0 && $0 <= 100 }
+                    if !valid.isEmpty {
+                        let avg = valid.reduce(0, +) / valid.count
+                        dayData["stress"] = [
+                            "avg": avg,
+                            "count": valid.count
+                        ]
+                    }
+                }
+            }
+            
+            // Only add days with data
+            if dayData.keys.count > 1 {
+                dailyData.append(dayData)
+            }
+        }
+        
+        summary["daily"] = dailyData
+        
+        if let jsonData = try? JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys]) {
+            print(String(data: jsonData, encoding: .utf8) ?? "{}")
+        } else {
+            print("{}")
+        }
+    }
+    
+    /// Print a health summary for the last N days (markdown format)
     static func printSummary(days: Int = 7) {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
