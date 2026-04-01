@@ -115,6 +115,52 @@ public final class SpO2LogParser: @unchecked Sendable {
     }
 }
 
+// MARK: - SpO2 Log Settings
+
+/// Continuous SpO2 monitoring settings
+public struct SpO2LogSettings: Codable, Sendable, Equatable {
+    public let enabled: Bool
+    public let intervalMinutes: Int
+    
+    public init(enabled: Bool, intervalMinutes: Int) {
+        self.enabled = enabled
+        self.intervalMinutes = intervalMinutes
+    }
+    
+    /// Parse settings response
+    public static func parse(_ data: Data) -> SpO2LogSettings? {
+        guard data.count >= 4,
+              ColmiPacket.commandType(data) == .spo2Settings else {
+            return nil
+        }
+        // Same format as HR settings: [cmd, subtype, enabled, interval]
+        return SpO2LogSettings(
+            enabled: data[2] == 0x01,
+            intervalMinutes: Int(data[3])
+        )
+    }
+    
+    /// Read settings packet
+    public static var readPacket: Data {
+        ColmiPacket.make(command: .spo2Settings, payload: Data([0x01]))
+    }
+    
+    /// Write settings packet
+    public func writePacket() -> Data {
+        let payload = Data([
+            0x02,  // Write subtype
+            enabled ? 0x01 : 0x02,
+            UInt8(intervalMinutes)
+        ])
+        return ColmiPacket.make(command: .spo2Settings, payload: payload)
+    }
+    
+    /// Common presets
+    public static let every30Min = SpO2LogSettings(enabled: true, intervalMinutes: 30)
+    public static let every60Min = SpO2LogSettings(enabled: true, intervalMinutes: 60)
+    public static let disabled = SpO2LogSettings(enabled: false, intervalMinutes: 30)
+}
+
 // MARK: - Real-time SpO2
 
 /// Real-time SpO2 measurement packets

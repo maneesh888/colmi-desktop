@@ -140,6 +140,14 @@ public final class HeartRateLogParser: @unchecked Sendable {
         let payload = ColmiPacket.timestampBytes(for: Calendar.current.startOfDay(for: date))
         return ColmiPacket.make(command: .readHeartRate, payload: payload)
     }
+    
+    /// Create request packet using day offset (R03+ compatible)
+    /// dayOffset: 0 = today, 1 = yesterday, 2 = day before, etc.
+    public static func requestPacketByOffset(_ dayOffset: Int) -> Data {
+        var payload = Data(count: 14)
+        payload[0] = UInt8(dayOffset)
+        return ColmiPacket.make(command: .readHeartRate, payload: payload)
+    }
 }
 
 // MARK: - HR Log Settings
