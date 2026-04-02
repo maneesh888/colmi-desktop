@@ -24,10 +24,10 @@
 - Sleep start/end times
 - **Status:** Protocol returns 0xEE (not supported) on R09, needs research
 
-### 2. SpO2 Monitoring Settings (0x2c)
+### 2. SpO2 Monitoring Settings (0x2c) ✅
 - Enable/disable continuous SpO2 monitoring
 - Similar to HR settings (0x16)
-- **Status:** Simple, just need to add
+- **Status:** Done — added to enableContinuousMonitoring()
 
 ### 3. Goals (0x21)
 - Set step/calorie/distance/sport/sleep goals

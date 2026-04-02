@@ -278,7 +278,7 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         
         // Enable continuous monitoring if requested
         if enableMonitoringInterval > 0 {
-            log("⚙️ Enabling continuous HR monitoring (every \(enableMonitoringInterval) min)...")
+            log("⚙️ Enabling continuous health monitoring (every \(enableMonitoringInterval) min)...")
             enableContinuousMonitoring(intervalMinutes: enableMonitoringInterval)
         }
         
@@ -316,6 +316,37 @@ class CLISync: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         
         // Enable HRV monitoring (0x38)
         enableHealthFeature(cmd: 0x38, name: "HRV")
+        
+        // Enable SpO2 monitoring (0x2c) - same interval as HR
+        log("   ⚙️ Enabling SpO2 monitoring...")
+        enableSpO2Monitoring(intervalMinutes: intervalMinutes)
+    }
+    
+    private func enableSpO2Monitoring(intervalMinutes: Int) {
+        // SpO2 Log Settings command 0x2c
+        // Write: [0x2c, 0x02, enabled (1=on, 2=off), interval_minutes, ...]
+        var packet = Data(count: 16)
+        packet[0] = 0x2C  // Command
+        packet[1] = 0x02  // Write subtype
+        packet[2] = 0x01  // Enabled = true
+        packet[3] = UInt8(intervalMinutes)
+        
+        // Calculate checksum
+        var checksum: UInt8 = 0
+        for i in 0..<15 {
+            checksum = checksum &+ packet[i]
+        }
+        packet[15] = checksum
+        
+        if let response = sendPacket(packet, waitTime: 2, expectedCmd: 0x2C) {
+            if response[2] == 0x01 {
+                log("   ✅ SpO2 monitoring enabled")
+            } else {
+                log("   ⚠️ SpO2 monitoring response: disabled")
+            }
+        } else {
+            log("   ⚠️ No response to SpO2 settings command")
+        }
     }
     
     private func enableHealthFeature(cmd: UInt8, name: String) {
