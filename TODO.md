@@ -1,68 +1,67 @@
-# Colmi R09 Feature TODO
+# ColmiSync Priority List
 
-## ✅ Done
-- [x] HR real-time measurement (0x69)
-- [x] SpO2 real-time measurement (0x6A)
-- [x] Battery level (0x03)
-- [x] HR log sync (0x15)
-- [x] HR monitoring settings (0x16)
-- [x] SpO2 log sync (0x2C)
-- [x] Steps/Activity sync (0x43)
-- [x] Stress monitoring settings (0x36)
-- [x] Stress log sync (0x37)
-- [x] HRV monitoring settings (0x38)
-- [x] HRV log sync (0x39)
-- [x] CLI with --history and --enable-monitoring
-- [x] SQLite storage (colmi_r02_client compatible schema)
-- [x] JSON export for Clawdbot integration
+## Current Status (2026-04-03)
 
-## 🔨 To Build (Priority Order)
+### Working ✅
+- Real-time HR, SpO2, Battery
+- Step history sync (0x43)
+- Enable monitoring settings (HR, Stress, HRV)
+- SQLite storage
+- JSON export for AI analysis
 
-### 1. Sleep Tracking (0xbc + 0x27) — BLOCKED
-- Big Data V2 command
-- Sleep stages: Light/Deep/REM/Awake
-- Sleep start/end times
-- **Status:** Protocol returns 0xEE (not supported) on R09, needs research
+### Not Working on RTL8762 chip ❌
+- HR history (0x15) → returns 0xFF
+- Sleep history (0xBC 0x27) → returns 0 bytes
+- SpO2 history (0x2C) → no data
+- Stress history (0x37) → returns 0xFF
+- HRV history (0x39) → returns 0xFF
 
-### 2. SpO2 Monitoring Settings (0x2c) ✅
-- Enable/disable continuous SpO2 monitoring
-- Similar to HR settings (0x16)
-- **Status:** Done — added to enableContinuousMonitoring()
+### Known Issue
+- R03/R09 with **RTL8762E chip** has protocol differences
+- R02/R03 with **BlueX RF03 chip** works fully
+- Gadgetbridge has same bug: https://codeberg.org/Freeyourgadget/Gadgetbridge/issues/4393
 
-### 3. Goals (0x21)
-- Set step/calorie/distance/sport/sleep goals
-- Read current goals
-- **Status:** Protocol documented
+---
 
-### 4. Set Time (0x01)
-- Sync time with ring on connect
-- Already have packet format
-- **Status:** Easy to add
+## Priority 1: Get History Working on RTL8762
 
-### 5. Factory Reset (0xff)
-- Reset ring to defaults
-- **Status:** Dangerous, add with confirmation
+### Option A: Capture QRing Protocol
+- [ ] Capture BLE traffic when QRing syncs sleep/HR history
+- [ ] Decode what commands QRing sends differently
+- [ ] Implement in ColmiSync
 
-## ❌ Not Applicable to R09
-- **Notifications (0x73)** — R09 has no display/vibration
-- **Phone Name (0x04)** — watch feature
-- **NFC Payments** — not supported
+### Option B: Wait for Gadgetbridge Fix
+- Monitor issue #4393 for updates
 
-## 🧪 Testing Checklist
+---
 
-Before adding new features, verify current ones work:
+## Priority 2: Fix Timestamp Parsing
+- [ ] Activity timestamps show year 2000 instead of 2026
+- [ ] BCD year parsing issue in ActivityParser
 
-- [ ] Real-time HR reads correctly when ring on finger
-- [ ] Real-time SpO2 reads correctly
-- [ ] --enable-monitoring actually enables logging on ring
-- [ ] --history syncs HR logs after monitoring enabled
-- [ ] --history syncs activity/steps
-- [ ] Stress readings appear after stress monitoring enabled
-- [ ] HRV readings appear after HRV monitoring enabled
+---
 
-## 📝 Notes
+## Priority 3: AI Health Analyzer Integration
+- [ ] Collect enough data (wear ring overnight)
+- [ ] Design AI prompt for health analysis
+- [ ] Build daily/weekly summary reports
 
-- Ring model: Colmi R09
-- Reference: Gadgetbridge ColmiR0x implementation
-- Python reference: tahnok/colmi_r02_client
-- Data stored in: ~/clawd/health/
+---
+
+## Priority 4: Polish
+- [ ] Daemon auto-sync reliability
+- [ ] Better error handling for disconnects
+- [ ] macOS menu bar app (future)
+
+---
+
+## Hardware Notes
+
+| Ring | Chip | History Sync |
+|------|------|--------------|
+| R02 | BlueX RF03 | ✅ Works |
+| R03 (old) | BlueX RF03 | ✅ Works |
+| R03 (new) | RTL8762E | ❌ Partial |
+| R09 | RTL8762E | ❌ Partial |
+
+Maneesh's R03 = RTL8762E (partial support)
