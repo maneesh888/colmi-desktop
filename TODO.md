@@ -35,9 +35,10 @@
 
 ---
 
-## Priority 2: Fix Timestamp Parsing
-- [ ] Activity timestamps show year 2000 instead of 2026
-- [ ] BCD year parsing issue in ActivityParser
+## Priority 2: Fix Timestamp Parsing ✅
+- [x] Activity timestamps show year 2000 instead of 2026
+- [x] BCD year parsing issue in ActivityParser
+- Fixed: RTL8762 sends 0x00 for year, now fallback to current year
 
 ---
 

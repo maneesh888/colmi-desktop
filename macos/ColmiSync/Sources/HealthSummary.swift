@@ -105,6 +105,46 @@ enum HealthSummary {
         
         summary["daily"] = dailyData
         
+        // Calculate weekly trends
+        if !dailyData.isEmpty {
+            var trends: [String: Any] = [:]
+            
+            // Steps trend
+            let stepsData = dailyData.compactMap { ($0["activity"] as? [String: Any])?["steps"] as? Int }
+            if stepsData.count >= 2 {
+                let avgSteps = stepsData.reduce(0, +) / stepsData.count
+                trends["avgSteps"] = avgSteps
+                trends["totalSteps"] = stepsData.reduce(0, +)
+            }
+            
+            // HR trend
+            let hrData = dailyData.compactMap { ($0["heartRate"] as? [String: Any])?["avg"] as? Int }
+            if hrData.count >= 2 {
+                let avgHR = hrData.reduce(0, +) / hrData.count
+                let minHR = hrData.min() ?? 0
+                let maxHR = hrData.max() ?? 0
+                trends["avgRestingHR"] = avgHR
+                trends["hrRange"] = ["min": minHR, "max": maxHR]
+            }
+            
+            // Sleep trend
+            let sleepData = dailyData.compactMap { ($0["sleep"] as? [String: Any])?["durationMinutes"] as? Int }
+            if sleepData.count >= 2 {
+                let avgSleep = sleepData.reduce(0, +) / sleepData.count
+                trends["avgSleepMinutes"] = avgSleep
+                trends["avgSleepFormatted"] = "\(avgSleep / 60)h \(avgSleep % 60)m"
+            }
+            
+            let qualityData = dailyData.compactMap { ($0["sleep"] as? [String: Any])?["qualityScore"] as? Int }
+            if qualityData.count >= 2 {
+                trends["avgSleepQuality"] = qualityData.reduce(0, +) / qualityData.count
+            }
+            
+            if !trends.isEmpty {
+                summary["weeklyTrends"] = trends
+            }
+        }
+        
         if let jsonData = try? JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys]) {
             print(String(data: jsonData, encoding: .utf8) ?? "{}")
         } else {
@@ -196,6 +236,55 @@ enum HealthSummary {
             
             if hasData {
                 print(dayOutput, terminator: "")
+            }
+        }
+        
+        // Weekly trends
+        var stepsData: [Int] = []
+        var hrData: [Int] = []
+        var sleepData: [Int] = []
+        var qualityData: [Int] = []
+        
+        for dayOffset in 0..<days {
+            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
+            let dateStr = df.string(from: date)
+            
+            if let activity = loadActivity(dateStr: dateStr),
+               let steps = activity["totalSteps"] as? Int, steps > 0 {
+                stepsData.append(steps)
+            }
+            if let hr = loadHR(dateStr: dateStr),
+               let readings = extractHRReadings(from: hr), !readings.isEmpty {
+                hrData.append(readings.reduce(0, +) / readings.count)
+            }
+            if let sleep = loadSleep(dateStr: dateStr) {
+                if let duration = sleep["durationMinutes"] as? Int, duration > 0 {
+                    sleepData.append(duration)
+                }
+                if let quality = sleep["qualityScore"] as? Int, quality > 0 {
+                    qualityData.append(quality)
+                }
+            }
+        }
+        
+        if !stepsData.isEmpty || !hrData.isEmpty || !sleepData.isEmpty {
+            print("\n## Weekly Trends")
+            if !stepsData.isEmpty {
+                let avg = stepsData.reduce(0, +) / stepsData.count
+                let total = stepsData.reduce(0, +)
+                print("- 🚶 Avg Steps: \(avg)/day, Total: \(total)")
+            }
+            if !hrData.isEmpty {
+                let avg = hrData.reduce(0, +) / hrData.count
+                print("- ❤️ Avg Resting HR: \(avg) BPM")
+            }
+            if !sleepData.isEmpty {
+                let avg = sleepData.reduce(0, +) / sleepData.count
+                print("- 😴 Avg Sleep: \(avg / 60)h \(avg % 60)m")
+            }
+            if !qualityData.isEmpty {
+                let avg = qualityData.reduce(0, +) / qualityData.count
+                print("- 🌟 Avg Sleep Quality: \(avg)%")
             }
         }
         
