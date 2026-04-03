@@ -370,8 +370,14 @@ class ActivityParser {
         // Note: R09 may use different date format, so we use today's date as fallback
         let timeIndex = Int(data[4])
         
-        // Try to parse BCD date, but don't fail if it doesn't work
-        let year = bcdToDecimal(data[1]) + 2000
+        // Try to parse BCD date - RTL8762 chips may send 0x00 for year
+        var year = bcdToDecimal(data[1])
+        if year == 0 {
+            // RTL8762 quirk: year byte is 0x00, use current year
+            year = Calendar.current.component(.year, from: Date()) - 2000
+        }
+        year += 2000
+        
         let month = bcdToDecimal(data[2])
         let day = bcdToDecimal(data[3])
         

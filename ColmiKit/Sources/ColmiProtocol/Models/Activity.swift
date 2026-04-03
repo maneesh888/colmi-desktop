@@ -87,7 +87,14 @@ public final class ActivityParser: @unchecked Sendable {
         // [9-10] = steps (little endian)
         // [11-12] = distance in meters (little endian)
         
-        let year = bcdToDecimal(data[1]) + 2000
+        // Parse date - RTL8762 chips may send 0x00 for year, so fallback to current year
+        var year = bcdToDecimal(data[1])
+        if year == 0 {
+            // RTL8762 quirk: year byte is 0x00, use current year
+            year = Calendar.current.component(.year, from: Date()) - 2000
+        }
+        year += 2000
+        
         let month = bcdToDecimal(data[2])
         let day = bcdToDecimal(data[3])
         let timeIndex = Int(data[4])
