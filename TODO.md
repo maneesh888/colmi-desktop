@@ -44,8 +44,8 @@
 
 ## Priority 3: AI Health Analyzer Integration
 - [ ] Collect enough data (wear ring overnight)
-- [ ] Design AI prompt for health analysis
-- [ ] Build daily/weekly summary reports
+- [x] Design AI prompt for health analysis → docs/AI_HEALTH_PROMPT.md
+- [x] Build daily/weekly summary reports → HealthSummary with trends
 
 ---
 
